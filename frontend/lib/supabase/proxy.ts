@@ -27,7 +27,17 @@ export async function updateSession(request: NextRequest) {
     }
   )
 
-  const { data: { user } } = await supabase.auth.getUser()
+  let user = null
+  try {
+    const { data } = await supabase.auth.getUser()
+    user = data.user
+  } catch (error) {
+    // Docker/dev DNS can intermittently fail (EAI_AGAIN); do not block the page.
+    console.warn(
+      'Supabase session refresh skipped:',
+      error instanceof Error ? error.message : error,
+    )
+  }
 
   if (!user && request.nextUrl.pathname.startsWith('/apply')) {
     const url = request.nextUrl.clone()

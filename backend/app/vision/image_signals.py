@@ -15,7 +15,7 @@ from PIL import Image, ImageFilter, ImageStat
 
 logger = logging.getLogger(__name__)
 
-MAX_VISION_EDGE = 1536
+MAX_VISION_EDGE = 1024
 _SAMPLE_STRIDE = 4
 
 

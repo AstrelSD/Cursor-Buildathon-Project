@@ -1,3 +1,5 @@
+import type { LoanRow } from "@/lib/supabase";
+
 const DEFAULT_API_URL = "http://localhost:8000";
 
 export function getApiBaseUrl(): string {
@@ -28,7 +30,24 @@ export type LoanStatusResponse = {
   multimodal_evidence_url: string | null;
   ai_verified_acreage: number | null;
   crop_health_matrix: Record<string, unknown> | null;
-  ai_verified_acreage: number | null;
+};
+
+export type AccountBalanceResponse = {
+  account_number: string;
+  available_balance: string | null;
+  ledger_balance: string | null;
+  currency: string | null;
+  transaction_reference: string;
+  banking_mode: "mock" | "live" | string;
+};
+
+export type RepaymentQrResponse = {
+  transaction_reference: string;
+  request_ref_no: string;
+  qr_code: string;
+  response_code: string;
+  response_description: string;
+  banking_mode: string;
 };
 
 async function parseError(response: Response): Promise<string> {
@@ -67,4 +86,25 @@ export async function fetchLoanStatus(loanId: string): Promise<LoanStatusRespons
   const response = await fetch(`${getApiBaseUrl()}/api/loans/${loanId}`);
   if (!response.ok) throw new Error(await parseError(response));
   return response.json() as Promise<LoanStatusResponse>;
+}
+
+export async function fetchUserLoans(userId: string): Promise<LoanRow[]> {
+  const params = new URLSearchParams({ user_id: userId });
+  const response = await fetch(`${getApiBaseUrl()}/api/loans?${params}`);
+  if (!response.ok) throw new Error(await parseError(response));
+  return response.json() as Promise<LoanRow[]>;
+}
+
+export async function fetchPayoutAccountBalance(): Promise<AccountBalanceResponse> {
+  const response = await fetch(`${getApiBaseUrl()}/api/loans/banking/payout-balance`);
+  if (!response.ok) throw new Error(await parseError(response));
+  return response.json() as Promise<AccountBalanceResponse>;
+}
+
+export async function fetchRepaymentQr(loanId: string): Promise<RepaymentQrResponse> {
+  const response = await fetch(`${getApiBaseUrl()}/api/loans/${loanId}/repayment/qr`, {
+    method: "POST",
+  });
+  if (!response.ok) throw new Error(await parseError(response));
+  return response.json() as Promise<RepaymentQrResponse>;
 }

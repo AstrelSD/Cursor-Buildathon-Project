@@ -23,6 +23,7 @@ import {
 import type { LoanStatus } from "@/lib/supabase";
 import { uploadCropEvidence } from "@/lib/storage";
 
+import { DisbursementPanel } from "@/components/banking/DisbursementPanel";
 import { FieldHealthConfidence } from "@/components/apply/FieldHealthConfidence";
 import { CROP_OPTIONS } from "@/constants/crops";
 import type { CropHealthMatrix } from "@/lib/supabase";
@@ -164,9 +165,8 @@ export function ApplyPageClient() {
         if (cancelled) return;
         setLoan(row);
         if (
-          row.status === "approved" ||
-          row.status === "disbursed" ||
-          row.status === "rejected"
+          row.status === "rejected" ||
+          row.status === "disbursed"
         ) {
           setPhase("done");
         }
@@ -439,16 +439,8 @@ export function ApplyPageClient() {
                 />
               )}
 
-              {decision && loan && (
-                <div
-                  className={`mt-6 rounded-lg border px-4 py-3 text-sm ${
-                    decision.tone === "success"
-                      ? "border-green-200 bg-green-50 text-green-900"
-                      : decision.tone === "error"
-                        ? "border-red-200 bg-red-50 text-red-900"
-                        : "border-gray-200 bg-gray-50"
-                  }`}
-                >
+              {loan?.status === "rejected" && decision && (
+                <div className="mt-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">
                   <p className="font-semibold">{decision.title}</p>
                   {loan.calculated_risk_score != null && (
                     <p className="mt-1">
@@ -459,13 +451,27 @@ export function ApplyPageClient() {
                   {loan.rejection_reason && (
                     <p className="mt-1 text-red-800">{loan.rejection_reason}</p>
                   )}
-                  {loan.transaction_reference && (
-                    <p className="mt-1 font-mono text-xs">
-                      Ref: {loan.transaction_reference}
-                    </p>
-                  )}
                 </div>
               )}
+
+              {loan &&
+              (loan.status === "approved" || loan.status === "disbursed") ? (
+                <div className="mt-6 space-y-3">
+                  {loan.calculated_risk_score != null && (
+                    <p className="text-sm text-gray-600">
+                      Risk score:{" "}
+                      <span className="font-mono font-medium text-gray-900">
+                        {loan.calculated_risk_score.toFixed(2)}
+                      </span>
+                    </p>
+                  )}
+                  <DisbursementPanel
+                    loanAmount={loan.requested_amount}
+                    transactionReference={loan.transaction_reference}
+                    status={loan.status}
+                  />
+                </div>
+              ) : null}
             </section>
 
             <div className="mt-6 lg:mt-8">

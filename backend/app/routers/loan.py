@@ -15,6 +15,12 @@ from app.config import settings
 from app.database import get_supabase
 from app.services.evaluation import run_evaluation_pipeline
 from app.services.loan_intake import create_draft_loan
+from app.services.seylan_api_service import (
+    SeylanApiError,
+    generate_repayment_qr,
+    get_payout_account_balance,
+    get_source_account_balance,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -121,6 +127,35 @@ async def create_loan(
 
     logger.info("Created draft loan %s", created["loan_id"])
     return created
+
+
+_LOAN_LIST_COLUMNS = (
+    "id, user_id, crop_type, declared_acreage, requested_amount, "
+    "ai_verified_acreage, crop_health_matrix, market_volatility_index, "
+    "calculated_risk_score, rejection_reason, status, multimodal_evidence_url, "
+    "transaction_reference, created_at, profiles(district)"
+)
+
+
+@router.get(
+    "",
+    summary="List loan applications for a farmer (service role; same user_id as create)",
+)
+async def list_loans(
+    user_id: UUID,
+    request: Request,
+) -> list[dict[str, object]]:
+    _require_supabase(request)
+    client = get_supabase()
+    response = await _supabase_call(
+        lambda: client.table("loans")
+        .select(_LOAN_LIST_COLUMNS)
+        .eq("user_id", str(user_id))
+        .order("created_at", desc=True)
+        .execute(),
+        action="list user loans",
+    )
+    return list(response.data or [])
 
 
 @router.get(
@@ -295,3 +330,101 @@ async def evaluate_loan(
         "loan_id": str(loan_id),
         "message": "Multi-agent underwriting pipeline started.",
     }
+
+
+class SourceBalanceResponse(BaseModel):
+    account_number: str
+    available_balance: str | None
+    ledger_balance: str | None
+    currency: str | None
+    transaction_reference: str
+    banking_mode: str
+
+
+class RepaymentQrResponse(BaseModel):
+    transaction_reference: str
+    request_ref_no: str
+    qr_code: str
+    response_code: str
+    response_description: str
+    banking_mode: str
+
+
+@router.get(
+    "/banking/payout-balance",
+    summary="Farmer payout account balance (CEFTS destination, live Inquiry when configured)",
+)
+async def payout_account_balance() -> SourceBalanceResponse:
+    try:
+        result = await get_payout_account_balance()
+    except SeylanApiError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+    return SourceBalanceResponse(
+        account_number=result.account_number,
+        available_balance=result.available_balance,
+        ledger_balance=result.ledger_balance,
+        currency=result.currency,
+        transaction_reference=result.transaction_reference,
+        banking_mode=result.banking_mode,
+    )
+
+
+@router.get(
+    "/banking/source-balance",
+    summary="Treasury source account balance (live Inquiry API when configured)",
+)
+async def source_account_balance() -> SourceBalanceResponse:
+    try:
+        result = await get_source_account_balance()
+    except SeylanApiError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+    return SourceBalanceResponse(
+        account_number=result.account_number,
+        available_balance=result.available_balance,
+        ledger_balance=result.ledger_balance,
+        currency=result.currency,
+        transaction_reference=result.transaction_reference,
+        banking_mode=result.banking_mode,
+    )
+
+
+@router.post(
+    "/{loan_id}/repayment/qr",
+    summary="Generate LankaQR for loan repayment (sandbox)",
+)
+async def create_repayment_qr(loan_id: UUID, request: Request) -> RepaymentQrResponse:
+    _require_supabase(request)
+
+    row = await _get_loan_row(loan_id, "id, status, requested_amount")
+    loan_status = row.get("status")
+    if loan_status not in ("approved", "disbursed"):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Loan must be approved or disbursed to generate repayment QR (current: {loan_status}).",
+        )
+
+    amount = float(row["requested_amount"])
+    try:
+        result = await generate_repayment_qr(amount, bill_no=str(loan_id))
+    except SeylanApiError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+    return RepaymentQrResponse(
+        transaction_reference=result.transaction_reference,
+        request_ref_no=result.request_ref_no,
+        qr_code=result.qr_code,
+        response_code=result.response_code,
+        response_description=result.response_description,
+        banking_mode=result.banking_mode,
+    )

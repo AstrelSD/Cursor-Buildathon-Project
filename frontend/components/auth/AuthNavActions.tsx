@@ -4,7 +4,7 @@ import { usePathname } from "next/navigation";
 import { LogoutButton } from "@/components/auth/LogoutButton";
 import { useAuth } from "@/components/providers/AuthProvider";
 import CommonButton from "@/components/ui/button";
-import { PATH_APPLY, PATH_LOGIN } from "@/constants/routes";
+import { PATH_APPLY, PATH_DASHBOARD, PATH_LOGIN } from "@/constants/routes";
 
 const navButtonBase =
   "shrink-0 rounded-lg px-4 py-2 text-sm font-medium sm:px-5";
@@ -17,6 +17,7 @@ export function AuthNavActions({ className = "" }: AuthNavActionsProps) {
   const pathname = usePathname();
   const { isAuthenticated, isLoading } = useAuth();
   const onApplyPage = pathname === PATH_APPLY;
+  const onDashboardPage = pathname === PATH_DASHBOARD;
 
   if (isLoading) {
     return (
@@ -40,6 +41,14 @@ export function AuthNavActions({ className = "" }: AuthNavActionsProps) {
 
   return (
     <div className={`flex shrink-0 flex-row items-center gap-2 sm:gap-3 ${className}`}>
+      {!onDashboardPage ? (
+        <CommonButton
+          href={PATH_DASHBOARD}
+          className={`${navButtonBase} border border-gray-200 bg-white text-gray-700 transition-colors hover:bg-gray-50`}
+        >
+          Dashboard
+        </CommonButton>
+      ) : null}
       {!onApplyPage ? (
         <CommonButton
           href={PATH_APPLY}

@@ -14,6 +14,7 @@ from app.agents.vision_agronomist import (
 from app.config import settings
 from app.database import get_supabase
 from app.models.schemas import LoanRecord
+from app.services.seylan_api_service import SeylanApiError
 from app.services.storage import guess_mime_type, resolve_storage_location
 
 logger = logging.getLogger(__name__)
@@ -168,12 +169,24 @@ async def run_evaluation_pipeline(loan_id: UUID) -> None:
     await _update_loan(loan_id, {"status": "underwriting"})
 
     underwriter = QuantUnderwriterAgent()
-    decision = await underwriter.decide(
-        vision=vision_result,
-        market=market_result,
-        declared_acreage=loan.declared_acreage,
-        requested_amount=loan.requested_amount,
-    )
+    try:
+        decision = await underwriter.decide(
+            vision=vision_result,
+            market=market_result,
+            declared_acreage=loan.declared_acreage,
+            requested_amount=loan.requested_amount,
+            loan_id=loan_id,
+        )
+    except SeylanApiError as exc:
+        logger.exception("Disbursement failed for loan %s", loan_id)
+        await _update_loan(
+            loan_id,
+            {
+                "status": "rejected",
+                "rejection_reason": f"Evaluation failed: Bank disbursement error ({exc}).",
+            },
+        )
+        return
 
     if not decision.approved:
         await _update_loan(

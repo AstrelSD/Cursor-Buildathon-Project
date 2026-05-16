@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import logging
-import uuid
 from typing import Optional
+from uuid import UUID
 
 from openai import AsyncOpenAI
 from pydantic import BaseModel, Field
 
 from app.config import settings
+from app.services.seylan_api_service import SeylanApiError, disburse_loan_amount
 from app.models.schemas import (
     MarketIntelligenceResult,
     UnderwriterDecision,
@@ -81,6 +82,8 @@ class QuantUnderwriterAgent:
         market: MarketIntelligenceResult,
         declared_acreage: float,
         requested_amount: float,
+        *,
+        loan_id: Optional[UUID] = None,
     ) -> UnderwriterDecision:
         risk_score = self.calculate_risk_score(vision, market, declared_acreage)
         threshold = settings.RISK_REJECTION_THRESHOLD
@@ -106,10 +109,11 @@ class QuantUnderwriterAgent:
                 decision_logs=logs,
             )
 
-        transaction_reference = await self._simulate_disbursement(requested_amount)
-        logs.append(
-            f"[DISBURSED] Settlement simulation succeeded. Reference {transaction_reference}."
+        transaction_reference, disbursement_log = await self._execute_disbursement(
+            requested_amount,
+            loan_id=loan_id,
         )
+        logs.append(disbursement_log)
         return UnderwriterDecision(
             calculated_risk_score=risk_score,
             approved=True,
@@ -191,11 +195,36 @@ class QuantUnderwriterAgent:
         return base_logs
 
     @staticmethod
-    async def _simulate_disbursement(requested_amount: float) -> str:
-        reference = f"TXN-{uuid.uuid4().hex[:12].upper()}"
+    async def _execute_disbursement(
+        requested_amount: float,
+        *,
+        loan_id: Optional[UUID] = None,
+    ) -> tuple[str, str]:
+        try:
+            reference, mode = await disburse_loan_amount(
+                requested_amount,
+                loan_id=str(loan_id) if loan_id else None,
+            )
+        except SeylanApiError:
+            logger.exception("Seylan sandbox disbursement failed")
+            raise
+
+        if mode == "mock":
+            return (
+                reference,
+                (
+                    f"[DISBURSED] Mock CEFTS to {settings.SEYLAN_CEFTS_DESTINATION_ACCOUNT}"
+                    f"@{settings.SEYLAN_CEFTS_DESTINATION_BANK_CODE} "
+                    f"(live Posting pending). Reference {reference}."
+                ),
+            )
+
         logger.info(
-            "Simulated disbursement of LKR %s with reference %s",
+            "CEFTS disbursement of LKR %s succeeded. Reference %s",
             f"{requested_amount:,.2f}",
             reference,
         )
-        return reference
+        return (
+            reference,
+            f"[DISBURSED] CEFTS transfer via Seylan sandbox succeeded. Reference {reference}.",
+        )

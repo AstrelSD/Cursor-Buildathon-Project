@@ -18,6 +18,11 @@
 
 services:
   api:
+    environment:
+      GEMINI_VISION_MODEL: gemini-2.5-flash
+      GEMINI_VISION_FALLBACK_MODELS: ""
+      GEMINI_VISION_MAX_RETRIES: "3"
+      MOCK_VISION_ON_FAILURE: "true"
     volumes:
       - ./backend/app:/app/app
       - ./backend/scripts:/app/scripts
@@ -36,6 +41,9 @@ services:
     build:
       dockerfile: Dockerfile.dev
     image: agri-lend-frontend:dev
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
     env_file:
       - ./frontend/.env
     volumes:
