@@ -9,6 +9,7 @@ from supabase import SupabaseException
 from app.config import settings
 from app.database import close_supabase, get_supabase, init_supabase
 from app.routers.loan import router as loan_router
+from app.routers.voice import router as voice_router
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +51,7 @@ app.add_middleware(
 )
 
 app.include_router(loan_router, prefix="/api")
+app.include_router(voice_router, prefix="/api")
 
 
 @app.get("/health")
@@ -59,6 +61,7 @@ async def health_check() -> dict[str, object]:
     integrations = {
         "openai": settings.openai_configured,
         "google_genai": settings.google_genai_configured,
+        "elevenlabs": settings.elevenlabs_configured,
         "supabase": supabase_ready,
     }
     payload: dict[str, object] = {

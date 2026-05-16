@@ -78,11 +78,24 @@ class Settings(BaseSettings):
         default="gemini-embedding-2",
         description="Gemini embedding model (must match seeded market_intelligence vectors).",
     )
+    DEMO_PROFILE_ID: Optional[str] = Field(
+        default=None,
+        description="UUID of an existing profiles row for anonymous apply flow (hackathon demo).",
+    )
+    ELEVENLABS_API_KEY: Optional[SecretStr] = Field(
+        default=None,
+        description="ElevenLabs API key for voice agent sessions (server-side only).",
+    )
+    ELEVENLABS_AGENT_ID: Optional[str] = Field(
+        default=None,
+        description="ElevenLabs Agents agent_id for conversational intake on /apply.",
+    )
 
     @field_validator(
         "OPENAI_API_KEY",
         "GOOGLE_GENAI_API_KEY",
         "SUPABASE_SERVICE_ROLE_KEY",
+        "ELEVENLABS_API_KEY",
         mode="before",
     )
     @classmethod
@@ -108,6 +121,10 @@ class Settings(BaseSettings):
     @property
     def google_genai_configured(self) -> bool:
         return self.GOOGLE_GENAI_API_KEY is not None
+
+    @property
+    def elevenlabs_configured(self) -> bool:
+        return self.ELEVENLABS_API_KEY is not None
 
 
 @lru_cache

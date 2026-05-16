@@ -1,19 +1,71 @@
 from __future__ import annotations
 
+import asyncio
 import logging
+import uuid
+from collections.abc import Awaitable, Callable
+from typing import TypeVar
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, status
+import httpx
+from fastapi import APIRouter, BackgroundTasks, File, HTTPException, Request, UploadFile, status
 from pydantic import BaseModel, Field
 
+from app.config import settings
 from app.database import get_supabase
 from app.services.evaluation import run_evaluation_pipeline
+from app.services.loan_intake import create_draft_loan
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/loans", tags=["loans"])
 
 BLOCKED_STATUSES = frozenset({"approved", "disbursed", "underwriting"})
+ALLOWED_IMAGE_TYPES = frozenset({"image/jpeg", "image/png", "image/webp"})
+MAX_EVIDENCE_BYTES = 10 * 1024 * 1024
+SUPABASE_RETRY_ATTEMPTS = 3
+
+T = TypeVar("T")
+
+
+async def _supabase_call(
+    operation: Callable[[], Awaitable[T]],
+    *,
+    action: str,
+) -> T:
+    """Retry transient network failures talking to Supabase from Docker."""
+    last_error: Exception | None = None
+    for attempt in range(1, SUPABASE_RETRY_ATTEMPTS + 1):
+        try:
+            return await operation()
+        except httpx.ConnectError as exc:
+            last_error = exc
+            logger.warning(
+                "Supabase connect failed during %s (attempt %s/%s)",
+                action,
+                attempt,
+                SUPABASE_RETRY_ATTEMPTS,
+            )
+            if attempt < SUPABASE_RETRY_ATTEMPTS:
+                await asyncio.sleep(0.5 * attempt)
+    raise HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail=(
+            f"Cannot reach Supabase while {action}. "
+            "Check SUPABASE_URL in backend/.env, that the project is not paused, "
+            "and that Docker has outbound internet access."
+        ),
+    ) from last_error
+
+
+class CreateLoanRequest(BaseModel):
+    crop_type: str = Field(..., min_length=1, examples=["Paddy"])
+    declared_acreage: float = Field(..., gt=0, examples=[2.5])
+    requested_amount: float = Field(..., ge=5000, examples=[75000.0])
+    user_id: UUID | None = Field(
+        default=None,
+        description="Profile id; falls back to DEMO_PROFILE_ID when omitted.",
+    )
 
 
 class AttachEvidenceRequest(BaseModel):
@@ -35,6 +87,54 @@ def _require_supabase(request: Request) -> None:
         )
 
 
+@router.post(
+    "",
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a draft loan application",
+)
+async def create_loan(
+    body: CreateLoanRequest,
+    request: Request,
+) -> dict[str, str]:
+    _require_supabase(request)
+
+    try:
+        created = await create_draft_loan(
+            crop_type=body.crop_type,
+            declared_acreage=body.declared_acreage,
+            requested_amount=body.requested_amount,
+            user_id=body.user_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create loan.",
+        ) from exc
+
+    logger.info("Created draft loan %s", created["loan_id"])
+    return created
+
+
+@router.get(
+    "/{loan_id}",
+    summary="Get loan application status",
+)
+async def get_loan(loan_id: UUID, request: Request) -> dict[str, object]:
+    _require_supabase(request)
+    row = await _get_loan_row(
+        loan_id,
+        "id, status, crop_type, declared_acreage, requested_amount, "
+        "calculated_risk_score, rejection_reason, transaction_reference, "
+        "multimodal_evidence_url, ai_verified_acreage, crop_health_matrix",
+    )
+    return row
+
+
 async def _get_loan_row(loan_id: UUID, columns: str) -> dict[str, object]:
     client = get_supabase()
     response = await (
@@ -47,6 +147,81 @@ async def _get_loan_row(loan_id: UUID, columns: str) -> dict[str, object]:
             detail=f"Loan {loan_id} not found.",
         )
     return rows[0]
+
+
+def _extension_for_upload(file: UploadFile) -> str:
+    if file.filename and "." in file.filename:
+        ext = file.filename.rsplit(".", 1)[-1].lower()
+        if ext in {"jpg", "jpeg", "png", "webp"}:
+            return "jpg" if ext == "jpeg" else ext
+    content_type = file.content_type or ""
+    if "png" in content_type:
+        return "png"
+    if "webp" in content_type:
+        return "webp"
+    return "jpg"
+
+
+@router.post(
+    "/{loan_id}/evidence/upload",
+    summary="Upload crop evidence image (server-side storage)",
+)
+async def upload_evidence(
+    loan_id: UUID,
+    request: Request,
+    file: UploadFile = File(...),
+) -> dict[str, str]:
+    _require_supabase(request)
+    await _get_loan_row(loan_id, "id")
+
+    content_type = file.content_type or ""
+    if content_type not in ALLOWED_IMAGE_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Image must be JPEG, PNG, or WebP.",
+        )
+
+    data = await file.read()
+    if not data:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Empty file.",
+        )
+    if len(data) > MAX_EVIDENCE_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Image must be 10 MB or smaller.",
+        )
+
+    ext = _extension_for_upload(file)
+    object_path = f"{loan_id}/{uuid.uuid4()}.{ext}"
+    bucket = settings.SUPABASE_STORAGE_BUCKET
+
+    client = get_supabase()
+
+    async def _upload_to_storage() -> None:
+        await client.storage.from_(bucket).upload(
+            object_path,
+            data,
+            file_options={"content-type": content_type},
+        )
+
+    async def _attach_path_to_loan() -> None:
+        await (
+            client.table("loans")
+            .update({"multimodal_evidence_url": object_path})
+            .eq("id", str(loan_id))
+            .execute()
+        )
+
+    await _supabase_call(_upload_to_storage, action="uploading crop evidence")
+    await _supabase_call(_attach_path_to_loan, action="saving evidence path on loan")
+
+    return {
+        "status": "ok",
+        "loan_id": str(loan_id),
+        "multimodal_evidence_url": object_path,
+    }
 
 
 @router.patch(

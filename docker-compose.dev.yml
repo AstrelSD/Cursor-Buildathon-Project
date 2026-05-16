@@ -1,7 +1,9 @@
 # Dev overlay: live code reload (buildathon workflow).
 #
-# First time (or after package.json / requirements.txt changes):
+# First time (or after package.json / package-lock.json changes):
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml run --rm frontend npm ci
 #   docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+# (Dev uses a named node_modules volume; rebuild alone may not install new packages.)
 #
 # Day-to-day (edit code, save — browser updates; restart only if needed):
 #   docker compose -f docker-compose.yml -f docker-compose.dev.yml up
