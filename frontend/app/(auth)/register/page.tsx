@@ -15,7 +15,7 @@ import {
   FormTextField,
 } from "@/components/auth/form-fields";
 import CommonButton from "@/components/ui/button";
-import { PATH_DASHBOARD, PATH_LOGIN } from "@/constants/routes";
+import { PATH_APPLY, PATH_LOGIN } from "@/constants/routes";
 import type { RegisterCredentials } from "@/types/user";
 import { signUpWithEmail } from "@/utils/authFunctions";
 import { getAuthErrorMessage } from "@/utils/authError";
@@ -46,7 +46,7 @@ export default function RegisterPage() {
       });
       await refreshSession();
       toastSuccess("Your account has been registered successfully.");
-      router.push(PATH_DASHBOARD);
+      router.push(PATH_APPLY);
       router.refresh();
     } catch (err: unknown) {
       setStatus(getAuthErrorMessage(err, "Registration failed"));
