@@ -1,0 +1,11 @@
+{
+  "name": "cursor-buildathon-project",
+  "private": true,
+  "dependencies": {
+    "next": "16.2.6"
+  },
+  "scripts": {
+    "build:frontend": "npm run build --prefix frontend",
+    "vercel-build": "npm ci --prefix frontend && npm run build --prefix frontend && node scripts/sync-next-output.mjs"
+  }
+}
