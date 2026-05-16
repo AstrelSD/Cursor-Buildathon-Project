@@ -14,7 +14,7 @@ import {
 } from "@/components/auth/form-fields";
 import CommonButton from "@/components/ui/button";
 import {
-  PATH_DASHBOARD,
+  PATH_APPLY,
   PATH_FORGOT_PASSWORD,
   PATH_REGISTER,
 } from "@/constants/routes";
@@ -40,7 +40,7 @@ export default function LoginPage() {
     try {
       await signInWithEmail(values.email, values.password);
       await refreshSession();
-      router.push(PATH_DASHBOARD);
+      router.push(PATH_APPLY);
       router.refresh();
     } catch (err: unknown) {
       setStatus(getAuthErrorMessage(err, "Login failed. Please try again."));
