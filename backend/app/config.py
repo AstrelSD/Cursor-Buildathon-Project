@@ -92,6 +92,14 @@ class Settings(BaseSettings):
         default=None,
         description="ElevenLabs Agents agent_id for conversational intake on /apply.",
     )
+    FRONTEND_URL: Optional[HttpUrl] = Field(
+        default=None,
+        description="Production frontend origin for CORS (e.g. https://your-app.vercel.app).",
+    )
+    CORS_ALLOW_ORIGINS: str = Field(
+        default="",
+        description="Extra CORS origins, comma-separated (preview URLs, custom domains).",
+    )
 
     # Seylan Bank APIs via hackathon sandbox proxy (see Web API Manual for paths/payloads)
     SEYLAN_API_KEY: Optional[SecretStr] = Field(
@@ -160,9 +168,9 @@ class Settings(BaseSettings):
     def normalize_optional_secrets(cls, value: object) -> object:
         return _strip_secret(value)
 
-    @field_validator("SUPABASE_URL", mode="before")
+    @field_validator("SUPABASE_URL", "FRONTEND_URL", mode="before")
     @classmethod
-    def normalize_supabase_url(cls, value: object) -> object:
+    def normalize_optional_urls(cls, value: object) -> object:
         value = _empty_to_none(value)
         if isinstance(value, str):
             return value.strip()
@@ -208,6 +216,20 @@ class Settings(BaseSettings):
     @property
     def seylan_sandbox_base_url(self) -> str:
         return self.SEYLAN_SANDBOX_BASE_URL.rstrip("/")
+
+    @property
+    def cors_origins(self) -> list[str]:
+        origins = [
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+        ]
+        if self.FRONTEND_URL is not None:
+            origins.append(str(self.FRONTEND_URL).rstrip("/"))
+        for raw in self.CORS_ALLOW_ORIGINS.split(","):
+            origin = raw.strip().rstrip("/")
+            if origin and origin not in origins:
+                origins.append(origin)
+        return origins
 
     @property
     def seylan_merchant_mid(self) -> str:
