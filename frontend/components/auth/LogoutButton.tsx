@@ -1,11 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useState } from "react";
+import { useAuth } from "@/components/providers/AuthProvider";
 import CommonButton from "@/components/ui/button";
 import { PATH_LOGIN } from "@/constants/routes";
-import { createClient } from "@/lib/supabase/client";
-import { signOut } from "@/utils/authFunctions";
 
 type LogoutButtonProps = {
   className?: string;
@@ -13,6 +12,7 @@ type LogoutButtonProps = {
 
 export function LogoutButton({ className }: LogoutButtonProps) {
   const router = useRouter();
+  const { signOut } = useAuth();
   const [loading, setLoading] = useState(false);
 
   const handleLogout = async () => {
@@ -42,25 +42,9 @@ export function LogoutButton({ className }: LogoutButtonProps) {
 }
 
 export function NavAuthButton() {
-  const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
+  const { isAuthenticated, isLoading } = useAuth();
 
-  useEffect(() => {
-    const supabase = createClient();
-
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setIsLoggedIn(!!session);
-    });
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setIsLoggedIn(!!session);
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
-
-  if (isLoggedIn === null) {
+  if (isLoading) {
     return (
       <span
         className="inline-block h-9 w-20 shrink-0 rounded-lg bg-gray-100"
@@ -69,7 +53,7 @@ export function NavAuthButton() {
     );
   }
 
-  if (isLoggedIn) {
+  if (isAuthenticated) {
     return (
       <LogoutButton className="shrink-0 rounded-lg bg-[#2E7D32] px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-[#1b5e20]" />
     );
