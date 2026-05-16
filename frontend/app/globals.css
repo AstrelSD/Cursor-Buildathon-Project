@@ -1,6 +1,9 @@
 @import "tailwindcss";
 
 :root {
+  --font-geist-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
+    Arial, sans-serif;
+  --font-playfair: Georgia, "Times New Roman", Times, serif;
   --agri-primary: #2e7d32;
   --agri-primary-dark: #1b5e20;
   --agri-accent: #4caf50;

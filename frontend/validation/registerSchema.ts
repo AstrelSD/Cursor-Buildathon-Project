@@ -1,5 +1,9 @@
 import * as Yup from "yup";
 import { SRI_LANKA_DISTRICTS } from "@/constants/districts";
+import {
+  FARMER_PAYOUT_ACCOUNT,
+  FARMER_PAYOUT_BANK_CODE,
+} from "@/constants/banking";
 import type { RegisterCredentials } from "@/types/user";
 
 const sriLankanPhoneRegex = /^\+94[0-9]{9}$/;
@@ -32,6 +36,14 @@ export const registerSchema = Yup.object({
     .trim()
     .required("Address is required")
     .min(5, "Address must be at least 5 characters"),
+  payoutAccountNumber: Yup.string()
+    .trim()
+    .required("Payout account number is required")
+    .matches(/^[0-9]{6,20}$/, "Enter a valid account number (6–20 digits)"),
+  payoutBankCode: Yup.string()
+    .trim()
+    .required("Bank code is required")
+    .matches(/^[0-9]{4}$/, "Enter a 4-digit bank code"),
   password: Yup.string()
     .required("Password is required")
     .min(6, "Password must be at least 6 characters"),
@@ -49,6 +61,8 @@ export const registerInitialValues: RegisterFormValues = {
   phone: "",
   district: SRI_LANKA_DISTRICTS[0],
   address: "",
+  payoutAccountNumber: FARMER_PAYOUT_ACCOUNT,
+  payoutBankCode: FARMER_PAYOUT_BANK_CODE,
   password: "",
   confirmPassword: "",
 };

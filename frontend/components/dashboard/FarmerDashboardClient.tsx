@@ -2,13 +2,15 @@
 
 import Link from "next/link";
 import { Loader2, Sprout } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { DisbursementPanel } from "@/components/banking/DisbursementPanel";
+import { RepaymentPanel } from "@/components/banking/RepaymentPanel";
+import { PayoutAccountForm } from "@/components/dashboard/PayoutAccountForm";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { PATH_APPLY, PATH_LOGIN } from "@/constants/routes";
 import { formatLkr } from "@/lib/format";
-import { subscribeUserLoans } from "@/lib/loans";
+import { fetchUserLoans, subscribeUserLoans } from "@/lib/loans";
 import { loanDistrict, type LoanRow } from "@/lib/supabase";
 
 function statusLabel(status: LoanRow["status"]): string {
@@ -23,6 +25,10 @@ function statusLabel(status: LoanRow["status"]): string {
       return "Approved";
     case "disbursed":
       return "Disbursed";
+    case "repayment_pending":
+      return "Awaiting payment";
+    case "repaid":
+      return "Repaid";
     case "rejected":
       return "Rejected";
     default:
@@ -31,6 +37,8 @@ function statusLabel(status: LoanRow["status"]): string {
 }
 
 function statusTone(status: LoanRow["status"]): string {
+  if (status === "repaid") return "bg-blue-100 text-blue-900";
+  if (status === "repayment_pending") return "bg-amber-100 text-amber-900";
   if (status === "disbursed" || status === "approved") {
     return "bg-emerald-100 text-emerald-900";
   }
@@ -46,6 +54,16 @@ export function FarmerDashboardClient() {
   const userId = session?.user?.id;
   const [loans, setLoans] = useState<LoanRow[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const refreshLoans = useCallback(async () => {
+    if (!userId) return;
+    try {
+      setLoans(await fetchUserLoans(userId));
+      setLoadError(null);
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : "Could not load loans.");
+    }
+  }, [userId]);
+
   useEffect(() => {
     if (!userId) return;
     setLoadError(null);
@@ -53,7 +71,10 @@ export function FarmerDashboardClient() {
   }, [userId]);
 
   const latestDisbursed = useMemo(
-    () => loans.find((loan) => loan.status === "disbursed"),
+    () =>
+      loans.find((loan) =>
+        ["disbursed", "repayment_pending", "repaid"].includes(loan.status),
+      ),
     [loans],
   );
 
@@ -92,15 +113,25 @@ export function FarmerDashboardClient() {
       <header>
         <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Your farm loans</h1>
         <p className="mt-2 text-sm text-gray-600">
-          Track applications, CEFTS disbursements, and payout account balance.
+          Track applications, repayments (LankaQR or CEFTS), and payout balance.
         </p>
       </header>
 
-      {highlightLoan && (highlightLoan.status === "disbursed" || highlightLoan.status === "approved") ? (
+      <PayoutAccountForm userId={userId} />
+
+      {highlightLoan &&
+      (highlightLoan.status === "disbursed" ||
+        highlightLoan.status === "approved" ||
+        highlightLoan.status === "repayment_pending" ||
+        highlightLoan.status === "repaid") ? (
         <DisbursementPanel
           loanAmount={highlightLoan.requested_amount}
           transactionReference={highlightLoan.transaction_reference}
-          status={highlightLoan.status}
+          status={
+            highlightLoan.status === "approved"
+              ? "approved"
+              : "disbursed"
+          }
           showDashboardLink={false}
         />
       ) : null}
@@ -174,7 +205,23 @@ export function FarmerDashboardClient() {
                     <dd className="text-red-800">{loan.rejection_reason}</dd>
                   </div>
                 ) : null}
+                {loan.repayment_reference ? (
+                  <div className="sm:col-span-2">
+                    <dt className="text-gray-500">Repayment reference</dt>
+                    <dd className="break-all font-mono text-xs text-gray-900">
+                      {loan.repayment_reference}
+                    </dd>
+                  </div>
+                ) : null}
               </dl>
+
+              {loan.status === "disbursed" ||
+              loan.status === "repayment_pending" ||
+              loan.status === "repaid" ? (
+                <div className="mt-4">
+                  <RepaymentPanel loan={loan} onRepaid={() => void refreshLoans()} />
+                </div>
+              ) : null}
             </li>
           ))}
         </ul>

@@ -10,6 +10,8 @@ export type RegisterCredentials = {
   phone: string;
   district: string;
   address: string;
+  payoutAccountNumber: string;
+  payoutBankCode: string;
   password: string;
   confirmPassword: string;
 };

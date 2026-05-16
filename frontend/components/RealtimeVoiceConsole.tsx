@@ -125,9 +125,6 @@ function VoiceConsoleInner({
       agent: {
         firstMessage:
           "Vanakkam! I'm Agri-Lend. You can speak in Tamil or English. Tell me your crop, how many acres you farm, and how much you need in Sri Lankan rupees.",
-        ...(process.env.NEXT_PUBLIC_ELEVENLABS_AGENT_LANGUAGE
-          ? { language: process.env.NEXT_PUBLIC_ELEVENLABS_AGENT_LANGUAGE }
-          : {}),
       },
     },
   });

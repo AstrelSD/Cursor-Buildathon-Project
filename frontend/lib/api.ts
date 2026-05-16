@@ -101,10 +101,48 @@ export async function fetchPayoutAccountBalance(): Promise<AccountBalanceRespons
   return response.json() as Promise<AccountBalanceResponse>;
 }
 
+export type RepaymentCeftsResponse = {
+  transaction_reference: string;
+  banking_mode: string;
+  source_account: string;
+  source_bank_code: string;
+  destination_account: string;
+  destination_bank_code: string;
+  amount: number;
+  status: string;
+};
+
+export type RepaymentStatusResponse = {
+  paid: boolean;
+  detection_method: string | null;
+  matched_reference: string | null;
+  banking_mode: string;
+  message: string;
+  loan_status: string;
+};
+
 export async function fetchRepaymentQr(loanId: string): Promise<RepaymentQrResponse> {
   const response = await fetch(`${getApiBaseUrl()}/api/loans/${loanId}/repayment/qr`, {
     method: "POST",
   });
   if (!response.ok) throw new Error(await parseError(response));
   return response.json() as Promise<RepaymentQrResponse>;
+}
+
+export async function initiateRepaymentCefts(
+  loanId: string,
+): Promise<RepaymentCeftsResponse> {
+  const response = await fetch(`${getApiBaseUrl()}/api/loans/${loanId}/repayment/cefts`, {
+    method: "POST",
+  });
+  if (!response.ok) throw new Error(await parseError(response));
+  return response.json() as Promise<RepaymentCeftsResponse>;
+}
+
+export async function fetchRepaymentStatus(
+  loanId: string,
+): Promise<RepaymentStatusResponse> {
+  const response = await fetch(`${getApiBaseUrl()}/api/loans/${loanId}/repayment/status`);
+  if (!response.ok) throw new Error(await parseError(response));
+  return response.json() as Promise<RepaymentStatusResponse>;
 }

@@ -6,12 +6,15 @@ export type LoanStatus =
   | "underwriting"
   | "approved"
   | "disbursed"
+  | "repayment_pending"
+  | "repaid"
   | "rejected";
 
 export type CropHealthMatrix = {
   chlorophyll_index?: number;
   vegetation_index?: number;
   anomaly_flag?: boolean;
+  disease_detected?: boolean;
   classification?: string;
   health_score?: number;
   image_quality_score?: number;
@@ -36,8 +39,28 @@ export type LoanRow = {
   status: LoanStatus;
   multimodal_evidence_url: string | null;
   transaction_reference: string | null;
+  repayment_method: "qr" | "cefts" | null;
+  repayment_reference: string | null;
+  repayment_qr_request_ref: string | null;
+  repaid_at: string | null;
   created_at: string;
-  profiles: { district: string } | { district: string }[] | null;
+  profiles:
+    | {
+        district: string;
+        payout_account_number: string | null;
+        payout_bank_code: string | null;
+      }
+    | {
+        district: string;
+        payout_account_number: string | null;
+        payout_bank_code: string | null;
+      }[]
+    | null;
+};
+
+export type ProfilePayout = {
+  payout_account_number: string | null;
+  payout_bank_code: string | null;
 };
 
 export function getSupabase(): SupabaseClient {

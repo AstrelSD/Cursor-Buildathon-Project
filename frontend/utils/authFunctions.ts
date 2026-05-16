@@ -20,6 +20,8 @@ type SignUpMetadata = {
   phone: string;
   district: string;
   address: string;
+  payoutAccountNumber: string;
+  payoutBankCode: string;
 };
 
 export const signUpWithEmail = async (
@@ -38,6 +40,8 @@ export const signUpWithEmail = async (
         phone: metadata.phone,
         district: metadata.district,
         address: metadata.address,
+        payout_account_number: metadata.payoutAccountNumber,
+        payout_bank_code: metadata.payoutBankCode,
         full_name: `${metadata.firstName} ${metadata.lastName}`.trim(),
       },
     },

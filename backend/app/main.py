@@ -9,6 +9,7 @@ from supabase import SupabaseException
 from app.config import settings
 from app.database import close_supabase, get_supabase, init_supabase
 from app.routers.loan import router as loan_router
+from app.routers.profile import router as profile_router
 from app.routers.voice import router as voice_router
 
 logger = logging.getLogger(__name__)
@@ -51,6 +52,7 @@ app.add_middleware(
 )
 
 app.include_router(loan_router, prefix="/api")
+app.include_router(profile_router, prefix="/api")
 app.include_router(voice_router, prefix="/api")
 
 

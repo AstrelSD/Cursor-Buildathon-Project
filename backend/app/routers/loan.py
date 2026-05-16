@@ -4,6 +4,7 @@ import asyncio
 import logging
 import uuid
 from collections.abc import Awaitable, Callable
+from datetime import datetime, timezone
 from typing import TypeVar
 from uuid import UUID
 
@@ -17,9 +18,11 @@ from app.services.evaluation import run_evaluation_pipeline
 from app.services.loan_intake import create_draft_loan
 from app.services.seylan_api_service import (
     SeylanApiError,
+    check_loan_repayment_status,
     generate_repayment_qr,
     get_payout_account_balance,
     get_source_account_balance,
+    repay_loan_via_cefts,
 )
 
 logger = logging.getLogger(__name__)
@@ -133,7 +136,9 @@ _LOAN_LIST_COLUMNS = (
     "id, user_id, crop_type, declared_acreage, requested_amount, "
     "ai_verified_acreage, crop_health_matrix, market_volatility_index, "
     "calculated_risk_score, rejection_reason, status, multimodal_evidence_url, "
-    "transaction_reference, created_at, profiles(district)"
+    "transaction_reference, repayment_method, repayment_reference, "
+    "repayment_qr_request_ref, repaid_at, created_at, "
+    "profiles(district, payout_account_number, payout_bank_code)"
 )
 
 
@@ -168,9 +173,36 @@ async def get_loan(loan_id: UUID, request: Request) -> dict[str, object]:
         loan_id,
         "id, status, crop_type, declared_acreage, requested_amount, "
         "calculated_risk_score, rejection_reason, transaction_reference, "
-        "multimodal_evidence_url, ai_verified_acreage, crop_health_matrix",
+        "multimodal_evidence_url, ai_verified_acreage, crop_health_matrix, "
+        "repayment_method, repayment_reference, repayment_qr_request_ref, repaid_at",
     )
     return row
+
+
+async def _update_loan_row(loan_id: UUID, payload: dict[str, object]) -> None:
+    client = get_supabase()
+    await client.table("loans").update(payload).eq("id", str(loan_id)).execute()
+
+
+async def _profile_payout_for_loan(loan_id: UUID) -> tuple[str, str]:
+    row = await _get_loan_row(
+        loan_id,
+        "user_id, profiles(payout_account_number, payout_bank_code)",
+    )
+    profile = row.get("profiles")
+    if isinstance(profile, list):
+        profile = profile[0] if profile else {}
+    if not isinstance(profile, dict):
+        profile = {}
+    account = (
+        str(profile.get("payout_account_number") or "").strip()
+        or settings.SEYLAN_CEFTS_DESTINATION_ACCOUNT
+    )
+    bank = (
+        str(profile.get("payout_bank_code") or "").strip()
+        or settings.SEYLAN_CEFTS_DESTINATION_BANK_CODE
+    )
+    return account, bank
 
 
 async def _get_loan_row(loan_id: UUID, columns: str) -> dict[str, object]:
@@ -350,6 +382,26 @@ class RepaymentQrResponse(BaseModel):
     banking_mode: str
 
 
+class RepaymentCeftsResponse(BaseModel):
+    transaction_reference: str
+    banking_mode: str
+    source_account: str
+    source_bank_code: str
+    destination_account: str
+    destination_bank_code: str
+    amount: float
+    status: str
+
+
+class RepaymentStatusResponse(BaseModel):
+    paid: bool
+    detection_method: str | None
+    matched_reference: str | None
+    banking_mode: str
+    message: str
+    loan_status: str
+
+
 @router.get(
     "/banking/payout-balance",
     summary="Farmer payout account balance (CEFTS destination, live Inquiry when configured)",
@@ -400,16 +452,25 @@ async def source_account_balance() -> SourceBalanceResponse:
     "/{loan_id}/repayment/qr",
     summary="Generate LankaQR for loan repayment (sandbox)",
 )
+def _require_repayable_status(loan_status: object) -> None:
+    if loan_status not in ("approved", "disbursed", "repayment_pending"):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Loan is not repayable (current: {loan_status}).",
+        )
+
+
 async def create_repayment_qr(loan_id: UUID, request: Request) -> RepaymentQrResponse:
     _require_supabase(request)
 
     row = await _get_loan_row(loan_id, "id, status, requested_amount")
     loan_status = row.get("status")
-    if loan_status not in ("approved", "disbursed"):
+    if loan_status == "repaid":
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"Loan must be approved or disbursed to generate repayment QR (current: {loan_status}).",
+            detail="Loan is already repaid.",
         )
+    _require_repayable_status(loan_status)
 
     amount = float(row["requested_amount"])
     try:
@@ -420,6 +481,15 @@ async def create_repayment_qr(loan_id: UUID, request: Request) -> RepaymentQrRes
             detail=str(exc),
         ) from exc
 
+    await _update_loan_row(
+        loan_id,
+        {
+            "status": "repayment_pending",
+            "repayment_method": "qr",
+            "repayment_qr_request_ref": result.request_ref_no,
+        },
+    )
+
     return RepaymentQrResponse(
         transaction_reference=result.transaction_reference,
         request_ref_no=result.request_ref_no,
@@ -427,4 +497,108 @@ async def create_repayment_qr(loan_id: UUID, request: Request) -> RepaymentQrRes
         response_code=result.response_code,
         response_description=result.response_description,
         banking_mode=result.banking_mode,
+    )
+
+
+@router.post(
+    "/{loan_id}/repayment/cefts",
+    summary="Repay loan via CEFTS (farmer account → treasury)",
+)
+async def create_repayment_cefts(loan_id: UUID, request: Request) -> RepaymentCeftsResponse:
+    _require_supabase(request)
+
+    row = await _get_loan_row(loan_id, "id, status, requested_amount")
+    loan_status = row.get("status")
+    if loan_status == "repaid":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Loan is already repaid.",
+        )
+    _require_repayable_status(loan_status)
+
+    amount = float(row["requested_amount"])
+    source_account, source_bank = await _profile_payout_for_loan(loan_id)
+
+    try:
+        reference, banking_mode = await repay_loan_via_cefts(
+            amount,
+            loan_id=str(loan_id),
+            source_account=source_account,
+            source_bank_code=source_bank,
+        )
+    except SeylanApiError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+    await _update_loan_row(
+        loan_id,
+        {
+            "status": "repaid",
+            "repayment_method": "cefts",
+            "repayment_reference": reference,
+            "repaid_at": datetime.now(timezone.utc).isoformat(),
+        },
+    )
+
+    return RepaymentCeftsResponse(
+        transaction_reference=reference,
+        banking_mode=banking_mode,
+        source_account=source_account,
+        source_bank_code=source_bank,
+        destination_account=settings.SEYLAN_SOURCE_ACCOUNT_NUMBER,
+        destination_bank_code=settings.SEYLAN_SOURCE_BANK_CODE,
+        amount=amount,
+        status="repaid",
+    )
+
+
+@router.get(
+    "/{loan_id}/repayment/status",
+    summary="Poll QR (TransactionView) or treasury history for repayment",
+)
+async def get_repayment_status(loan_id: UUID, request: Request) -> RepaymentStatusResponse:
+    _require_supabase(request)
+
+    row = await _get_loan_row(
+        loan_id,
+        "id, status, requested_amount, repayment_qr_request_ref, repayment_reference",
+    )
+    loan_status = str(row.get("status", ""))
+    amount = float(row["requested_amount"])
+
+    try:
+        result = await check_loan_repayment_status(
+            loan_id=str(loan_id),
+            amount=amount,
+            loan_status=loan_status,
+            repayment_qr_request_ref=row.get("repayment_qr_request_ref"),  # type: ignore[arg-type]
+            repayment_reference=row.get("repayment_reference"),  # type: ignore[arg-type]
+        )
+    except SeylanApiError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+    if result.paid and loan_status != "repaid":
+        await _update_loan_row(
+            loan_id,
+            {
+                "status": "repaid",
+                "repayment_reference": result.matched_reference
+                or row.get("repayment_reference"),
+                "repaid_at": datetime.now(timezone.utc).isoformat(),
+            },
+        )
+        loan_status = "repaid"
+
+    return RepaymentStatusResponse(
+        paid=result.paid,
+        detection_method=result.detection_method,
+        matched_reference=result.matched_reference,
+        banking_mode=result.banking_mode,
+        message=result.message,
+        loan_status=loan_status,
     )

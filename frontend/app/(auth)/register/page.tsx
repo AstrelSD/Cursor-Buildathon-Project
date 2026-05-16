@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Formik, Form, type FormikHelpers } from "formik";
-import { ArrowRight, Mail, MapPin, Phone, User } from "lucide-react";
+import { ArrowRight, Building2, CreditCard, Mail, MapPin, Phone, User } from "lucide-react";
 import { AuthFormLayout } from "@/components/auth/AuthFormLayout";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { useToast } from "@/hooks/useToast";
@@ -46,6 +46,8 @@ export default function RegisterPage() {
         phone: values.phone,
         district: values.district,
         address: values.address,
+        payoutAccountNumber: values.payoutAccountNumber,
+        payoutBankCode: values.payoutBankCode,
       });
       await refreshSession();
       toastSuccess("Your account has been registered successfully.");
@@ -126,6 +128,32 @@ export default function RegisterPage() {
               placeholder="Farm or mailing address"
               icon={MapPin}
             />
+
+            <div className="rounded-lg border border-emerald-100 bg-emerald-50/50 p-4">
+              <p className="text-sm font-medium text-gray-900">Payout bank account</p>
+              <p className="mt-1 text-xs text-gray-600">
+                Where loan funds are sent and repayments are debited. Hackathon demo defaults
+                to the Seylan test account.
+              </p>
+              <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                <FormTextField
+                  name="payoutAccountNumber"
+                  id="payoutAccountNumber"
+                  label="Account number"
+                  placeholder="12345678"
+                  autoComplete="off"
+                  icon={CreditCard}
+                />
+                <FormTextField
+                  name="payoutBankCode"
+                  id="payoutBankCode"
+                  label="Bank code"
+                  placeholder="6990"
+                  autoComplete="off"
+                  icon={Building2}
+                />
+              </div>
+            </div>
 
             <FormPasswordField
               name="password"

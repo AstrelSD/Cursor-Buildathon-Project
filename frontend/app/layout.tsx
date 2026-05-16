@@ -1,17 +1,6 @@
 import type { Metadata } from "next";
-import { Geist, Playfair_Display } from "next/font/google";
 import { Providers } from "@/components/providers/Providers";
 import "./globals.css";
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const playfair = Playfair_Display({
-  variable: "--font-playfair",
-  subsets: ["latin"],
-});
 
 export const metadata: Metadata = {
   title: "Agri-Lend | Financial Growth for Every Acre",
@@ -25,11 +14,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html
-      lang="en"
-      className={`${geistSans.variable} ${playfair.variable} min-h-dvh antialiased`}
-    >
-      <body className="flex min-h-dvh flex-col">
+    <html lang="en" className="min-h-dvh antialiased" suppressHydrationWarning>
+      <body className="flex min-h-dvh flex-col" suppressHydrationWarning>
         <Providers>{children}</Providers>
       </body>
     </html>

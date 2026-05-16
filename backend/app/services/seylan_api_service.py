@@ -21,7 +21,12 @@ _HEX_TABLE = "0123456789ABCDEF"
 INTERNAL_TRANSFER_PATH = "/Posting/Account/InternalTransfer/1.0/TransferFunds"
 CEFTS_PATH = "/Posting/Account/Cefts/1.0/InitiateCEFTSTransfer"
 GENERATE_QR_PATH = "/MerchantQR/1.0/GenerateQR"
+TRANSACTION_VIEW_PATH = "/MerchantQR/1.0/TransactionView"
 BALANCE_INQUIRY_PATH = "/Inquiry/Account/AccountInquiry/1.0/GetAccountBalance"
+TRANSACTION_HISTORY_PATH = "/Inquiry/Account/AccountInquiry/1.0/GetAccountTransactions"
+TRANSACTION_HISTORY_PATH_ALT = (
+    "/Inquiry/Account/AccountInquiry/1.0/GetAccountTransactionHistory"
+)
 
 BankingMode = Literal["mock", "live"]
 
@@ -81,6 +86,14 @@ class GenerateQrResult(BaseModel):
     check_value: Optional[str] = None
     banking_mode: BankingMode = "live"
     raw_response: dict[str, Any] = Field(default_factory=dict)
+
+
+class RepaymentStatusResult(BaseModel):
+    paid: bool
+    detection_method: Optional[str] = None
+    matched_reference: Optional[str] = None
+    banking_mode: BankingMode = "mock"
+    message: str = ""
 
 
 class AccountBalanceResult(BaseModel):
@@ -182,6 +195,19 @@ def generate_hmac_sha512_checksum(secret_key: str, data_string: str) -> str:
         _HEX_TABLE[(byte >> 4) & 0xF] + _HEX_TABLE[byte & 0xF] for byte in mac
     )
     return base64.b64encode(hex_digest.encode("utf-8")).decode("utf-8")
+
+
+def build_transaction_view_checksum_data(
+    *,
+    merchant_login_id: str,
+    from_date: str,
+    to_date: str,
+    mid: str,
+    tid: str = "",
+    rrn: str = "",
+) -> str:
+    """Pipe-delimited checksum for MerchantQR TransactionView (manual section 7.2)."""
+    return "|".join([merchant_login_id, from_date, to_date, mid, tid, rrn])
 
 
 def build_generate_qr_checksum_data(
@@ -443,6 +469,7 @@ class DisbursementService:
         destination_customer_name: Optional[str] = None,
         source_account_number: Optional[str] = None,
         source_customer_name: Optional[str] = None,
+        source_bank_code: Optional[str] = None,
         processing_code: str = "482000",
         transaction_code: str = "52",
     ) -> dict[str, Any]:
@@ -463,7 +490,7 @@ class DisbursementService:
                 "Source_card_number": "",
                 "Source_customer_name": source_customer_name
                 or settings.SEYLAN_SOURCE_CUSTOMER_NAME,
-                "Source_bank_code": settings.SEYLAN_SOURCE_BANK_CODE,
+                "Source_bank_code": source_bank_code or settings.SEYLAN_SOURCE_BANK_CODE,
                 "Source_branch_code": "",
                 "Source_wallet_number": "",
                 "Destination_card_number": "",
@@ -509,6 +536,9 @@ class DisbursementService:
         *,
         reference: Optional[str] = None,
         destination_customer_name: Optional[str] = None,
+        source_account_number: Optional[str] = None,
+        source_customer_name: Optional[str] = None,
+        source_bank_code: Optional[str] = None,
     ) -> CeftsTransferResult:
         """
         POST InitiateCEFTSTransfer and return the gateway Transaction Reference.
@@ -519,6 +549,9 @@ class DisbursementService:
             amount=amount,
             reference=reference,
             destination_customer_name=destination_customer_name,
+            source_account_number=source_account_number,
+            source_customer_name=source_customer_name,
+            source_bank_code=source_bank_code,
         )
         logger.info(
             "Initiating CEFTS transfer to %s@%s amount=%s ref=%s",
@@ -859,3 +892,281 @@ class RepaymentService:
             banking_mode="live",
             raw_response=raw,
         )
+
+    async def inquiry_merchant_transactions(
+        self,
+        *,
+        from_date: str,
+        to_date: str,
+        rrn: str = "",
+    ) -> list[dict[str, Any]]:
+        """POST TransactionView (manual 7.2) — list merchant QR settlements."""
+        ref_no = str(int(uuid.uuid4().int % 10**12)).zfill(12)[:12]
+        mid = settings.seylan_merchant_mid
+        merchant_login_id = settings.seylan_merchant_login_id
+        merchant_login_pass = settings.seylan_merchant_login_pass
+        checksum_key = settings.SEYLAN_QR_CHECKSUM_KEY.get_secret_value()  # type: ignore[union-attr]
+        checksum_data = build_transaction_view_checksum_data(
+            merchant_login_id=merchant_login_id,
+            from_date=from_date,
+            to_date=to_date,
+            mid=mid,
+            tid="",
+            rrn=rrn,
+        )
+        check_sum = generate_hmac_sha512_checksum(checksum_key, checksum_data)
+        body = {
+            "TransactionView_Request": {
+                "Institution_id": settings.SEYLAN_QR_INSTITUTION_ID,
+                "Channel_user_id": settings.SEYLAN_QR_CHANNEL_USER_ID,
+                "Channel_pass": settings.SEYLAN_QR_CHANNEL_PASS.get_secret_value(),  # type: ignore[union-attr]
+                "Request_ref_no": ref_no,
+                "Merchant_login_id": merchant_login_id,
+                "Merchant_login_pass": merchant_login_pass,
+                "Function": "viewMerTxnAPI",
+                "From_date": from_date,
+                "To_date": to_date,
+                "Rrn": rrn,
+                "Mid": mid,
+                "Tid": "",
+                "Customer_card_no": "",
+                "Additional_value_first": "",
+                "Additional_value_second": "",
+                "Records_per_page_count": "50",
+                "Page_no": "1",
+                "Ip_address": "",
+                "Check_sum": check_sum,
+            }
+        }
+        raw = await self._client.post(TRANSACTION_VIEW_PATH, body)
+        response_root = _response_root(raw, "TransactionView_Response")
+        _require_success(response_root, failure_label="QR transaction inquiry failed")
+        info = response_root.get("TransactionView_Information", {})
+        details = info.get("transactionDetails", [])
+        if isinstance(details, list):
+            return [d for d in details if isinstance(d, dict)]
+        return []
+
+
+def _history_date_range(*, days: int = 14) -> tuple[str, str]:
+    today = datetime.now(timezone.utc).date()
+    start = today.fromordinal(today.toordinal() - days)
+    return start.isoformat(), today.isoformat()
+
+
+def _extract_history_transactions(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    root = payload.get("TransactionHistoryInquiryResponse", payload)
+    transactions = root.get("Transaction", [])
+    if isinstance(transactions, list):
+        return [t for t in transactions if isinstance(t, dict)]
+    return []
+
+
+def _transaction_matches_repayment(
+    txn: dict[str, Any],
+    *,
+    loan_id: str,
+    amount: float | Decimal | str,
+    search_tokens: tuple[str, ...],
+) -> bool:
+    formatted_amount = _format_amount(amount)
+    amount_candidates = {formatted_amount, f"{formatted_amount}.00", f"-{formatted_amount}"}
+    posting = str(txn.get("Posting_amount", "")).replace(",", "").strip()
+    if posting.lstrip("-") not in {a.lstrip("-") for a in amount_candidates}:
+        if not any(
+            posting.lstrip("-").startswith(a.lstrip("-"))
+            for a in amount_candidates
+            if a
+        ):
+            return False
+
+    haystack = " ".join(
+        str(txn.get(key, "") or "")
+        for key in (
+            "Users_own_reference",
+            "Narrative_1",
+            "Narrative_2",
+            "Narrative_3",
+            "Narrative_4",
+            "Additional_line_1",
+            "Additional_line_2",
+            "Additional_line_3",
+            "Additional_line_4",
+        )
+    ).upper()
+    loan_token = loan_id.replace("-", "").upper()
+    for token in search_tokens:
+        if token.upper() in haystack or loan_token in haystack.replace("-", ""):
+            return True
+    return False
+
+
+async def get_treasury_transaction_history(
+    *,
+    days: int = 14,
+) -> list[dict[str, Any]]:
+    """Treasury account credits/debits (manual GetAccountTransactions)."""
+    if not settings.seylan_configured:
+        return []
+
+    from_date, to_date = _history_date_range(days=days)
+    client = _SeylanHttpClient()
+    account = settings.SEYLAN_SOURCE_ACCOUNT_NUMBER
+    category = settings.SEYLAN_ACCOUNT_CATEGORY
+    param_sets = (
+        {
+            "AccountCategory": category,
+            "AccountNumber": account,
+            "StartDate": from_date,
+            "EndDate": to_date,
+        },
+        {
+            "AccountCategory": category,
+            "AccountNumber": account,
+            "FromDate": from_date,
+            "ToDate": to_date,
+        },
+    )
+    paths = (TRANSACTION_HISTORY_PATH, TRANSACTION_HISTORY_PATH_ALT)
+    last_error: Optional[Exception] = None
+    for path in paths:
+        for params in param_sets:
+            try:
+                payload = await client.get(path, params=params)
+                txns = _extract_history_transactions(payload)
+                if txns:
+                    return txns
+                code = _status_code(
+                    payload.get("TransactionHistoryInquiryResponse", payload)
+                )
+                if code == "0000":
+                    return []
+            except Exception as exc:  # noqa: BLE001 — try alternate path/params
+                last_error = exc
+                logger.debug("Transaction history %s failed: %s", path, exc)
+    if last_error:
+        logger.warning("Treasury transaction history unavailable: %s", last_error)
+    return []
+
+
+async def repay_loan_via_cefts(
+    amount: float | Decimal | str,
+    *,
+    loan_id: str,
+    source_account: str,
+    source_bank_code: str,
+    source_customer_name: Optional[str] = None,
+) -> tuple[str, BankingMode]:
+    """Farmer → treasury CEFTS repayment (reverse of disbursement)."""
+    reference = f"REPAY-{loan_id}"
+    if settings.SEYLAN_MOCK_BANKING or not settings.seylan_disbursement_configured:
+        ref = mock_transaction_reference(label="REPAY")
+        logger.info(
+            "Mock CEFTS repayment LKR %s from %s@%s ref=%s",
+            amount,
+            source_account,
+            source_bank_code,
+            ref,
+        )
+        return ref, "mock"
+
+    service = DisbursementService()
+    try:
+        result = await service.initiate_cefts_transfer(
+            destination_account=settings.SEYLAN_SOURCE_ACCOUNT_NUMBER,
+            bank_code=settings.SEYLAN_SOURCE_BANK_CODE,
+            amount=amount,
+            reference=reference,
+            destination_customer_name=settings.SEYLAN_SOURCE_CUSTOMER_NAME,
+            source_account_number=source_account,
+            source_customer_name=source_customer_name or settings.SEYLAN_DEFAULT_DESTINATION_NAME,
+            source_bank_code=source_bank_code,
+        )
+        return result.transaction_reference, "live"
+    except SeylanApiError as exc:
+        if settings.SEYLAN_FALLBACK_TO_MOCK_ON_ERROR:
+            logger.warning("Live CEFTS repayment failed (%s); using mock", exc)
+            return mock_transaction_reference(label="REPAY"), "mock"
+        raise
+
+
+async def check_loan_repayment_status(
+    *,
+    loan_id: str,
+    amount: float | Decimal | str,
+    loan_status: str,
+    repayment_qr_request_ref: Optional[str] = None,
+    repayment_reference: Optional[str] = None,
+) -> RepaymentStatusResult:
+    """Detect repayment via Merchant TransactionView (7.2) and treasury history (2C)."""
+    if loan_status == "repaid":
+        return RepaymentStatusResult(
+            paid=True,
+            detection_method="already_repaid",
+            matched_reference=repayment_reference,
+            banking_mode="live",
+            message="Loan is already marked repaid.",
+        )
+
+    if loan_status not in ("disbursed", "repayment_pending", "approved"):
+        return RepaymentStatusResult(
+            paid=False,
+            message=f"Loan status '{loan_status}' is not awaiting repayment.",
+        )
+
+    search_tokens = (f"REPAY-{loan_id}", loan_id, repayment_qr_request_ref or "")
+    formatted_amount = _format_amount(amount)
+
+    if settings.seylan_qr_configured and not settings.SEYLAN_MOCK_BANKING:
+        from_date, to_date = _history_date_range(days=30)
+        try:
+            details = await RepaymentService().inquiry_merchant_transactions(
+                from_date=from_date,
+                to_date=to_date,
+            )
+            for detail in details:
+                txn_amount = str(detail.get("Transaction_amount", "")).strip()
+                if txn_amount not in (formatted_amount, f"{formatted_amount}.00"):
+                    continue
+                rrn = str(detail.get("Retrieval_refernce_no", "") or "")
+                if repayment_qr_request_ref and repayment_qr_request_ref not in rrn:
+                    bill_match = loan_id[:8] in str(detail).upper()
+                    if not bill_match:
+                        continue
+                return RepaymentStatusResult(
+                    paid=True,
+                    detection_method="qr_transaction_view",
+                    matched_reference=rrn or str(detail.get("Stan", "")),
+                    banking_mode="live",
+                    message="QR payment found in merchant transaction view.",
+                )
+        except SeylanApiError as exc:
+            logger.warning("Merchant TransactionView inquiry failed: %s", exc)
+
+    if settings.seylan_configured:
+        try:
+            for txn in await get_treasury_transaction_history(days=21):
+                if _transaction_matches_repayment(
+                    txn,
+                    loan_id=loan_id,
+                    amount=amount,
+                    search_tokens=search_tokens,
+                ):
+                    ref = str(txn.get("Users_own_reference", "") or "") or str(
+                        txn.get("Narrative_4", "") or ""
+                    )
+                    return RepaymentStatusResult(
+                        paid=True,
+                        detection_method="treasury_transaction_history",
+                        matched_reference=ref or None,
+                        banking_mode="live",
+                        message="Repayment credit found on treasury account.",
+                    )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Treasury history scan failed: %s", exc)
+
+    return RepaymentStatusResult(
+        paid=False,
+        banking_mode="mock" if settings.SEYLAN_MOCK_BANKING else "live",
+        message="No matching repayment found yet. Pay via QR or CEFTS, then refresh.",
+    )
