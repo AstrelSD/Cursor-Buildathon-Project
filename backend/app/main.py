@@ -8,6 +8,7 @@ from supabase import SupabaseException
 
 from app.config import settings
 from app.database import close_supabase, get_supabase, init_supabase
+from app.routers.loan import router as loan_router
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +48,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(loan_router, prefix="/api")
 
 
 @app.get("/health")
