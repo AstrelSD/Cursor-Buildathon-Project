@@ -1,5 +1,8 @@
 export const PATH_LOGIN = "/login";
-export const PATH_APPLY = "/apply";
+export const PATH_OTP = "/forgot-password/otp";
+export const PATH_REGISTER = "/register";
+export const PATH_FORGOT_PASSWORD = "/forgot-password";
+export const PATH_RESET_PASSWORD = "/forgot-password/otp/reset-password";
 export const PATH_HOME = "/";
 export const PATH_DASHBOARD = "/dashboard";
 export const PATH_RESOURCES = "/resources";

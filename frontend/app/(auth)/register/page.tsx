@@ -1,110 +1,152 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { ArrowRight, Eye, EyeOff, Lock, User } from "lucide-react";
-import { AgriLendLogo } from "@/app/components/AgriLendLogo";
-import { Footer } from "../../components/common/footer";
+import { Formik, Form, type FormikHelpers } from "formik";
+import { ArrowRight, Mail, MapPin, Phone, User } from "lucide-react";
+import { AuthFormLayout } from "@/components/auth/AuthFormLayout";
+import {
+  FormAlert,
+  FormPasswordField,
+  FormTextAreaField,
+  FormTextField,
+} from "@/components/auth/form-fields";
+import CommonButton from "@/components/ui/button";
+import { PATH_DASHBOARD, PATH_LOGIN } from "@/constants/routes";
+import type { RegisterCredentials } from "@/types/user";
+import { signUpWithEmail } from "@/utils/authFunctions";
+import { getAuthErrorMessage } from "@/utils/authError";
+import { formStyles } from "@/utils/formFieldClass";
+import {
+  registerInitialValues,
+  registerSchema,
+} from "@/validation/registerSchema";
 
 export default function RegisterPage() {
+  const router = useRouter();
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
+  const handleSubmit = async (
+    values: RegisterCredentials,
+    { setSubmitting, setStatus }: FormikHelpers<RegisterCredentials>,
+  ) => {
+    setStatus(undefined);
+    try {
+      await signUpWithEmail(values.email, values.password, {
+        firstName: values.firstName,
+        lastName: values.lastName,
+        phone: values.phone,
+        address: values.address,
+      });
+      router.push(PATH_DASHBOARD);
+    } catch (err: unknown) {
+      setStatus(getAuthErrorMessage(err, "Registration failed"));
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
-    <div className="relative flex min-h-full flex-1 flex-col">
-      <div
-        className="pointer-events-none absolute -bottom-32 -left-32 h-96 w-96 rounded-full bg-[#4CAF50]/20 blur-3xl"
-        aria-hidden
-      />
+    <AuthFormLayout
+      subtitle="Create your Agri-Lend account"
+      maxWidth="lg"
+    >
+      <Formik
+        initialValues={registerInitialValues}
+        validationSchema={registerSchema}
+        onSubmit={handleSubmit}
+      >
+        {({ isSubmitting, status }) => (
+          <Form className="mt-8 space-y-5" noValidate>
+            <FormAlert message={status} />
 
-      <div className="flex flex-1 flex-col items-center justify-center px-4 py-12">
-        <div className="w-full max-w-md rounded-2xl border border-gray-100 bg-white p-8 shadow-lg sm:p-10">
-          <div className="flex flex-col items-center text-center">
-            <AgriLendLogo href="/" />
-            <p className="mt-4 text-sm text-gray-500">
-              Secure access to your farm&apos;s financial future.
-            </p>
-          </div>
-
-          <form
-            className="mt-8 space-y-5"
-            onSubmit={(e) => e.preventDefault()}
-          >
-            <div>
-              <label
-                htmlFor="identifier"
-                className="mb-1.5 block text-sm font-medium text-gray-700"
-              >
-                Phone Number or Email
-              </label>
-              <div className="relative">
-                <User className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
-                <input
-                  id="identifier"
-                  type="text"
-                  placeholder="Enter phone or email"
-                  className="w-full rounded-lg border border-gray-200 py-3 pl-10 pr-4 text-gray-900 outline-none transition-colors placeholder:text-gray-400 focus:border-[#2E7D32] focus:ring-2 focus:ring-[#2E7D32]/20"
-                />
-              </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <FormTextField
+                name="firstName"
+                id="firstName"
+                label="First name"
+                placeholder="First name"
+                autoComplete="given-name"
+                icon={User}
+              />
+              <FormTextField
+                name="lastName"
+                id="lastName"
+                label="Last name"
+                placeholder="Last name"
+                autoComplete="family-name"
+                icon={User}
+              />
             </div>
 
-            <div>
-              <label
-                htmlFor="password"
-                className="mb-1.5 block text-sm font-medium text-gray-700"
-              >
-                PIN or Password
-              </label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
-                <input
-                  id="password"
-                  type={showPassword ? "text" : "password"}
-                  placeholder="Enter your PIN or password"
-                  className="w-full rounded-lg border border-gray-200 py-3 pl-10 pr-12 text-gray-900 outline-none transition-colors placeholder:text-gray-400 focus:border-[#2E7D32] focus:ring-2 focus:ring-[#2E7D32]/20"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                  aria-label={showPassword ? "Hide password" : "Show password"}
-                >
-                  {showPassword ? (
-                    <EyeOff className="h-5 w-5" />
-                  ) : (
-                    <Eye className="h-5 w-5" />
-                  )}
-                </button>
-              </div>
-            </div>
+            <FormTextField
+              name="email"
+              id="email"
+              label="Email"
+              type="email"
+              placeholder="you@example.com"
+              autoComplete="email"
+              icon={Mail}
+            />
 
-            <button
+            <FormTextField
+              name="phone"
+              id="phone"
+              label="Phone number"
+              type="tel"
+              placeholder="+94771234567"
+              autoComplete="tel"
+              icon={Phone}
+            />
+
+            <FormTextAreaField
+              name="address"
+              id="address"
+              label="Address"
+              placeholder="Farm or mailing address"
+              icon={MapPin}
+            />
+
+            <FormPasswordField
+              name="password"
+              id="password"
+              label="Password"
+              placeholder="Create a password"
+              show={showPassword}
+              onToggle={() => setShowPassword((v) => !v)}
+            />
+
+            <FormPasswordField
+              name="confirmPassword"
+              id="confirmPassword"
+              label="Confirm password"
+              placeholder="Confirm your password"
+              show={showConfirmPassword}
+              onToggle={() => setShowConfirmPassword((v) => !v)}
+            />
+
+            <CommonButton
               type="submit"
-              className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#2E7D32] py-3.5 text-base font-medium text-white transition-colors hover:bg-[#1b5e20]"
+              loading={isSubmitting}
+              disabled={isSubmitting}
+              className={formStyles.submitButton}
+              icon={<ArrowRight className="h-5 w-5" />}
+              iconPosition="right"
             >
-              Log In
-              <ArrowRight className="h-5 w-5" />
-            </button>
-          </form>
+              Register
+            </CommonButton>
+          </Form>
+        )}
+      </Formik>
 
-          <p className="mt-6 text-center text-sm text-gray-500">
-            <Link href="#help" className="hover:text-[#2E7D32]">
-              Need help signing in?
-            </Link>
-          </p>
-
-          <p className="mt-8 border-t border-gray-100 pt-6 text-center text-sm text-gray-600">
-            Don&apos;t have an account?{" "}
-            <Link
-              href="/apply"
-              className="font-medium text-[#2E7D32] hover:underline"
-            >
-              Apply for a Loan
-            </Link>
-          </p>
-        </div>
-      </div>
-
-      <Footer />
-    </div>
+      <p className={formStyles.footerLink}>
+        Already have an account?{" "}
+        <Link href={PATH_LOGIN} className={formStyles.link}>
+          Log in
+        </Link>
+      </p>
+    </AuthFormLayout>
   );
 }

@@ -180,7 +180,7 @@ agri-lend/
     │   ├── app/
     │   │   ├── layout.tsx
     │   │   ├── page.tsx                # High-fidelity executive risk manager control dashboard
-    │   │   └── apply/
+    │   │   └── dashboard/
     │   │       └── page.tsx            # Portal entry interface housing uploads and live pipelines
     │   ├── components/
     │   │   ├── RealtimeVoiceConsole.tsx # Interactive ElevenLabs streaming widget audio core

@@ -1,7 +1,7 @@
 import { Leaf } from "lucide-react";
-import LandingBanner from "../components/home/landingBanner";
-import ProcessCard from "../components/home/processCard";
-import { STEPS } from "../constants/home";
+import LandingBanner from "../../components/home/landingBanner";
+import ProcessCard from "../../components/home/processCard";
+import { STEPS } from "../../constants/home";
 
 export default function HomePage() {
   return (
