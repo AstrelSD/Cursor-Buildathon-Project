@@ -13,9 +13,6 @@ const tracingRoot = existsSync(path.join(repoRoot, "package.json"))
 const nextConfig: NextConfig = {
   output: "standalone",
   outputFileTracingRoot: tracingRoot,
-  turbopack: {
-    root: tracingRoot,
-  },
 };
 
 export default nextConfig;

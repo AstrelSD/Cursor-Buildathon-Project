@@ -6,6 +6,6 @@
   },
   "scripts": {
     "build:frontend": "npm run build --prefix frontend",
-    "vercel-build": "npm ci --prefix frontend && npm run build --prefix frontend && node scripts/sync-next-output.mjs"
+    "vercel-build": "npm ci --prefix frontend --include=dev && npm run build --prefix frontend && node scripts/sync-next-output.mjs"
   }
 }
