@@ -22,6 +22,11 @@
   --font-serif: var(--font-playfair);
 }
 
+html,
+body {
+  min-height: 100dvh;
+}
+
 body {
   background-color: var(--agri-bg);
   background-image: radial-gradient(circle, #d1d5db 1px, transparent 1px);
