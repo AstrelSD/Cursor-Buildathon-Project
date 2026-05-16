@@ -6,6 +6,7 @@ import { useState } from "react";
 import { Formik, Form, type FormikHelpers } from "formik";
 import { ArrowRight, Mail, MapPin, Phone, User } from "lucide-react";
 import { AuthFormLayout } from "@/components/auth/AuthFormLayout";
+import { useAuth } from "@/components/providers/AuthProvider";
 import {
   FormAlert,
   FormPasswordField,
@@ -25,6 +26,7 @@ import {
 
 export default function RegisterPage() {
   const router = useRouter();
+  const { refreshSession } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
@@ -40,7 +42,9 @@ export default function RegisterPage() {
         phone: values.phone,
         address: values.address,
       });
+      await refreshSession();
       router.push(PATH_DASHBOARD);
+      router.refresh();
     } catch (err: unknown) {
       setStatus(getAuthErrorMessage(err, "Registration failed"));
     } finally {

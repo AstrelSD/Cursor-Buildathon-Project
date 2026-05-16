@@ -6,6 +6,7 @@ import { useState } from "react";
 import { Formik, Form, type FormikHelpers } from "formik";
 import { ArrowRight, Mail } from "lucide-react";
 import { AuthFormLayout } from "@/components/auth/AuthFormLayout";
+import { useAuth } from "@/components/providers/AuthProvider";
 import {
   FormAlert,
   FormPasswordField,
@@ -28,6 +29,7 @@ import {
 
 export default function LoginPage() {
   const router = useRouter();
+  const { refreshSession } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
 
   const handleSubmit = async (
@@ -37,7 +39,9 @@ export default function LoginPage() {
     setStatus(undefined);
     try {
       await signInWithEmail(values.email, values.password);
+      await refreshSession();
       router.push(PATH_DASHBOARD);
+      router.refresh();
     } catch (err: unknown) {
       setStatus(getAuthErrorMessage(err, "Login failed. Please try again."));
     } finally {
