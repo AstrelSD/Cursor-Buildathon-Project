@@ -64,7 +64,7 @@ class CreateLoanRequest(BaseModel):
     requested_amount: float = Field(..., ge=5000, examples=[75000.0])
     user_id: UUID | None = Field(
         default=None,
-        description="Profile id; falls back to DEMO_PROFILE_ID when omitted.",
+        description="Authenticated user's profile id (required).",
     )
 
 
@@ -106,10 +106,13 @@ async def create_loan(
             user_id=body.user_id,
         )
     except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(exc),
-        ) from exc
+        msg = str(exc)
+        status_code = (
+            status.HTTP_401_UNAUTHORIZED
+            if "logged in" in msg.lower()
+            else status.HTTP_400_BAD_REQUEST
+        )
+        raise HTTPException(status_code=status_code, detail=msg) from exc
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

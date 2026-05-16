@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from app.config import settings
 from app.database import get_supabase
+from app.services.profile_resolver import resolve_profile_id
 
 
 async def create_draft_loan(
@@ -13,24 +13,10 @@ async def create_draft_loan(
     requested_amount: float,
     user_id: UUID | None = None,
 ) -> dict[str, str]:
-    """Insert a draft loan row; uses DEMO_PROFILE_ID when user_id is omitted."""
-    resolved_user_id = user_id
-    if resolved_user_id is None:
-        if not settings.DEMO_PROFILE_ID:
-            raise ValueError("user_id is required when DEMO_PROFILE_ID is not configured.")
-        resolved_user_id = UUID(settings.DEMO_PROFILE_ID)
+    """Insert a draft loan row for the authenticated user's profile."""
+    resolved_user_id = await resolve_profile_id(user_id)
 
     client = get_supabase()
-    profile = await (
-        client.table("profiles")
-        .select("id")
-        .eq("id", str(resolved_user_id))
-        .limit(1)
-        .execute()
-    )
-    if profile is None or not profile.data:
-        raise ValueError(f"Profile {resolved_user_id} not found.")
-
     insert = await (
         client.table("loans")
         .insert(

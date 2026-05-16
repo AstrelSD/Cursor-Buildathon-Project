@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Optional
 from uuid import UUID
 
 import httpx
@@ -22,6 +23,10 @@ class VoiceIntakeRequest(BaseModel):
         min_length=8,
         description="Farmer speech transcript from ElevenLabs conversation.",
     )
+    user_id: Optional[UUID] = Field(
+        default=None,
+        description="Authenticated user's profile id (required).",
+    )
 
 
 class VoiceIntakeResponse(BaseModel):
@@ -38,6 +43,14 @@ def _require_voice_config() -> None:
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="ElevenLabs is not configured. Set ELEVENLABS_API_KEY in backend/.env",
         )
+
+
+@router.get("/config", summary="Voice agent readiness (no secrets)")
+async def get_voice_config() -> dict[str, bool]:
+    return {
+        "elevenlabs_configured": settings.elevenlabs_configured,
+        "agent_configured": bool(settings.ELEVENLABS_AGENT_ID),
+    }
 
 
 @router.get("/signed-url", summary="Get signed WebSocket URL for private ElevenLabs agent")
@@ -60,9 +73,19 @@ async def get_signed_url() -> dict[str, str]:
 
     if response.status_code != 200:
         logger.error("ElevenLabs signed-url error: %s", response.text)
+        detail = "Failed to obtain ElevenLabs signed URL."
+        try:
+            err_body = response.json()
+            inner = err_body.get("detail") if isinstance(err_body, dict) else None
+            if isinstance(inner, dict) and inner.get("message"):
+                detail = f"ElevenLabs: {inner['message']}"
+            elif isinstance(inner, str):
+                detail = inner
+        except Exception:
+            pass
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Failed to obtain ElevenLabs signed URL.",
+            detail=detail,
         )
 
     body = response.json()
@@ -101,12 +124,16 @@ async def voice_intake(body: VoiceIntakeRequest) -> VoiceIntakeResponse:
             crop_type=fields.crop_type,
             declared_acreage=fields.declared_acreage,
             requested_amount=fields.requested_amount,
+            user_id=body.user_id,
         )
     except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(exc),
-        ) from exc
+        msg = str(exc)
+        status_code = (
+            status.HTTP_401_UNAUTHORIZED
+            if "logged in" in msg.lower()
+            else status.HTTP_400_BAD_REQUEST
+        )
+        raise HTTPException(status_code=status_code, detail=msg) from exc
     except Exception as exc:
         logger.exception("Draft loan creation failed after voice intake")
         raise HTTPException(

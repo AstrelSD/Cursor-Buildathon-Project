@@ -11,6 +11,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { MultimodalUploader } from "@/components/MultimodalUploader";
 import { RealtimeVoiceConsole } from "@/components/RealtimeVoiceConsole";
+import { useAuth } from "@/components/providers/AuthProvider";
+import { PATH_LOGIN, PATH_REGISTER } from "@/constants/routes";
 import type { VoiceIntakeResult } from "@/lib/voice";
 import {
   createLoan,
@@ -21,7 +23,9 @@ import {
 import type { LoanStatus } from "@/lib/supabase";
 import { uploadCropEvidence } from "@/lib/storage";
 
-const CROP_OPTIONS = ["Paddy", "Maize", "Tea", "Coconut", "Vegetables"] as const;
+import { FieldHealthConfidence } from "@/components/apply/FieldHealthConfidence";
+import { CROP_OPTIONS } from "@/constants/crops";
+import type { CropHealthMatrix } from "@/lib/supabase";
 
 type Step = {
   id: number;
@@ -100,6 +104,9 @@ function decisionLabel(status: LoanStatus | undefined): {
 }
 
 export function ApplyPageClient() {
+  const { session, isLoading, isAuthenticated } = useAuth();
+  const profileUserId = session?.user?.id;
+
   const [cropType, setCropType] = useState<string>(CROP_OPTIONS[0]);
   const [acreage, setAcreage] = useState("2.5");
   const [amount, setAmount] = useState("75000");
@@ -192,7 +199,7 @@ export function ApplyPageClient() {
   }, []);
 
   async function handleSubmit() {
-    if (!file || !formComplete) return;
+    if (!profileUserId || !file || !formComplete) return;
 
     setSubmitError(null);
     setUploadError(null);
@@ -205,6 +212,7 @@ export function ApplyPageClient() {
           crop_type: cropType,
           declared_acreage: Number(acreage),
           requested_amount: Number(amount),
+          user_id: profileUserId,
         });
         id = created.loan_id;
         setLoanId(id);
@@ -240,6 +248,42 @@ export function ApplyPageClient() {
 
   const isBusy = phase === "submitting" || phase === "analyzing";
 
+  if (isLoading) {
+    return (
+      <div className="flex flex-1 items-center justify-center py-16 text-sm text-gray-500">
+        Loading…
+      </div>
+    );
+  }
+
+  if (!isAuthenticated || !profileUserId) {
+    return (
+      <div className="flex flex-1 flex-col items-center justify-center px-4 py-16 text-center">
+        <p className="max-w-md text-lg font-semibold text-gray-900">
+          Log in to apply for a farm loan
+        </p>
+        <p className="mt-2 max-w-sm text-sm text-gray-600">
+          Registration includes your district and phone so we can underwrite your
+          application.
+        </p>
+        <div className="mt-6 flex flex-wrap justify-center gap-3">
+          <Link
+            href={PATH_LOGIN}
+            className="rounded-full bg-[#2E7D32] px-6 py-2.5 text-sm font-medium text-white hover:bg-[#1b5e20]"
+          >
+            Log in
+          </Link>
+          <Link
+            href={PATH_REGISTER}
+            className="rounded-full border border-[#2E7D32] px-6 py-2.5 text-sm font-medium text-[#2E7D32] hover:bg-[#2E7D32]/5"
+          >
+            Register
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-1 flex-col items-center bg-[#f8faf8] px-4 py-8 sm:px-6">
       <div className="relative w-full max-w-5xl rounded-2xl border border-gray-100 bg-white shadow-xl">
@@ -270,6 +314,7 @@ export function ApplyPageClient() {
               <div className="mt-4">
                 <RealtimeVoiceConsole
                   disabled={isBusy}
+                  profileUserId={profileUserId}
                   onIntakeComplete={handleVoiceIntake}
                   onError={setSubmitError}
                 />
@@ -340,6 +385,10 @@ export function ApplyPageClient() {
                   onValidationError={setUploadError}
                   error={uploadError}
                 />
+                <p className="mt-3 text-xs leading-relaxed text-gray-500">
+                  For best AI review: daylight, full field in frame, match your selected crop,
+                  avoid blur or heavy shadows. We analyze canopy health, disease cues, and acreage.
+                </p>
               </div>
             </section>
           </div>
@@ -380,6 +429,15 @@ export function ApplyPageClient() {
                   </li>
                 ))}
               </ol>
+
+              {loan?.crop_health_matrix && (
+                <FieldHealthConfidence
+                  cropHealthMatrix={loan.crop_health_matrix as CropHealthMatrix}
+                  calculatedRiskScore={loan.calculated_risk_score}
+                  aiVerifiedAcreage={loan.ai_verified_acreage}
+                  declaredAcreage={loan.declared_acreage}
+                />
+              )}
 
               {decision && loan && (
                 <div

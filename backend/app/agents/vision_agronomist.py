@@ -11,20 +11,17 @@ from google.genai.errors import ClientError
 
 from app.config import settings
 from app.models.schemas import VisionAnalysisResult
+from app.vision.calibration import calibrate_vision_result
+from app.vision.image_signals import (
+    ImageSignals,
+    analyze_image_bytes,
+    prepare_image_for_vision,
+)
+from app.vision.prompts import build_vision_system_prompt, build_vision_user_prompt
 
 logger = logging.getLogger(__name__)
 
-VISION_SYSTEM_PROMPT = """You are VisionAgronomistAgent, an expert agronomic computer-vision underwriter
-for smallholder farms in Sri Lanka. Analyze the crop field imagery and return ONLY valid JSON with
-exactly these keys:
-- estimated_acreage (positive number)
-- chlorophyll_index (0.0 to 1.0)
-- disease_detected (boolean)
-- health_score (0 to 100)
-
-Evaluate blight, pests, chlorosis, dead-leaf coverage, and field boundaries.
-For normal readable crop field photos, health_score should reflect visible vigor (typically 50-95).
-Only use health_score 0 when the image is not a readable agricultural field."""
+MIN_IMAGE_QUALITY = 28.0
 
 
 class VisionAnalysisError(Exception):
@@ -70,13 +67,24 @@ def _vision_model_candidates() -> list[str]:
     return ordered
 
 
-def _mock_vision_result(declared_acreage: float) -> VisionAnalysisResult:
-    """Deterministic fallback for demos when Gemini quota is unavailable."""
+def _mock_vision_result(
+    declared_acreage: float,
+    signals: ImageSignals,
+) -> VisionAnalysisResult:
+    """Deterministic fallback aligned with RGB pre-analysis."""
+    health = round(52.0 + 40.0 * signals.vegetation_index, 1)
     return VisionAnalysisResult(
-        estimated_acreage=round(declared_acreage * 0.98, 2),
-        chlorophyll_index=0.82,
+        estimated_acreage=round(declared_acreage * 0.97, 2),
+        chlorophyll_index=round(signals.vegetation_index * 0.95, 3),
         disease_detected=False,
-        health_score=88.0,
+        health_score=health,
+        image_quality_score=signals.image_quality_score,
+        crop_match_confidence=0.78 if signals.is_likely_field else 0.4,
+        canopy_cover_percent=round(45.0 + 35.0 * signals.vegetation_index, 1),
+        detected_issues=[],
+        growth_stage="vegetative",
+        acreage_confidence=0.55,
+        vegetation_index=signals.vegetation_index,
     )
 
 
@@ -92,24 +100,34 @@ class VisionAgronomistAgent:
         image_bytes: bytes,
         mime_type: str,
         declared_acreage: float,
+        crop_type: str,
+        district: str | None = None,
     ) -> VisionAnalysisResult:
         if not image_bytes:
             raise VisionAnalysisError()
 
-        prompt = (
-            f"The farmer declared {declared_acreage:.2f} acres. "
-            "Estimate cultivated acreage from visible field boundaries. "
-            'Return JSON only, e.g. {"estimated_acreage": 2.4, "chlorophyll_index": 0.82, '
-            '"disease_detected": false, "health_score": 88}'
-        )
+        prepared_bytes, prepared_mime = prepare_image_for_vision(image_bytes, mime_type)
+        signals = analyze_image_bytes(prepared_bytes)
 
+        if not signals.is_likely_field and signals.image_quality_score < 32.0:
+            raise VisionAnalysisError(
+                "Evaluation failed: Photo does not appear to show a crop field. "
+                "Upload a clear outdoor field image in daylight."
+            )
+
+        prompt = build_vision_user_prompt(
+            crop_type=crop_type,
+            district=district,
+            declared_acreage=declared_acreage,
+            signals=signals,
+        )
         contents = [
-            types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
+            types.Part.from_bytes(data=prepared_bytes, mime_type=prepared_mime),
             types.Part.from_text(text=prompt),
         ]
         config = types.GenerateContentConfig(
-            system_instruction=VISION_SYSTEM_PROMPT,
-            temperature=0.1,
+            system_instruction=build_vision_system_prompt(),
+            temperature=0.15,
             response_mime_type="application/json",
         )
 
@@ -123,7 +141,24 @@ class VisionAgronomistAgent:
                     contents=contents,
                     config=config,
                 )
-                return self._parse_response(response.text, model_id)
+                raw = self._parse_response(response.text, model_id)
+                calibrated = calibrate_vision_result(
+                    raw,
+                    declared_acreage=declared_acreage,
+                    signals=signals,
+                )
+                self._validate_for_underwriting(calibrated)
+                logger.info(
+                    "Vision analysis via %s health=%.1f quality=%.1f crop_match=%.2f issues=%s",
+                    model_id,
+                    calibrated.health_score,
+                    calibrated.image_quality_score,
+                    calibrated.crop_match_confidence,
+                    calibrated.detected_issues,
+                )
+                return calibrated
+            except VisionAnalysisError:
+                raise
             except ClientError as exc:
                 last_error = exc
                 if exc.status_code == 429:
@@ -138,13 +173,32 @@ class VisionAgronomistAgent:
                 continue
 
         if settings.MOCK_VISION_ON_FAILURE:
-            logger.warning("Using MOCK_VISION_ON_FAILURE fallback for declared_acreage=%s", declared_acreage)
-            return _mock_vision_result(declared_acreage)
+            logger.warning("Using MOCK_VISION_ON_FAILURE for crop=%s", crop_type)
+            mock = _mock_vision_result(declared_acreage, signals)
+            return calibrate_vision_result(
+                mock,
+                declared_acreage=declared_acreage,
+                signals=signals,
+            )
 
         if quota_hit:
             raise VisionQuotaError() from last_error
 
         raise VisionAnalysisError() from last_error
+
+    @staticmethod
+    def _validate_for_underwriting(result: VisionAnalysisResult) -> None:
+        if result.health_score <= 0 or result.estimated_acreage <= 0:
+            raise VisionAnalysisError()
+        if result.image_quality_score < MIN_IMAGE_QUALITY:
+            raise VisionAnalysisError(
+                "Evaluation failed: Image too blurry, dark, or low resolution. "
+                "Retake the photo in daylight with the full field visible."
+            )
+        if result.crop_match_confidence < 0.25:
+            raise VisionAnalysisError(
+                "Evaluation failed: Photo does not match the declared crop type."
+            )
 
     @staticmethod
     def _parse_response(text: Optional[str], model_id: str) -> VisionAnalysisResult:
@@ -153,13 +207,11 @@ class VisionAgronomistAgent:
 
         try:
             payload = json.loads(_extract_json_payload(text))
-            result = VisionAnalysisResult.model_validate(payload)
+            if isinstance(payload.get("detected_issues"), str):
+                payload["detected_issues"] = [payload["detected_issues"]]
+            return VisionAnalysisResult.model_validate(payload)
+        except VisionAnalysisError:
+            raise
         except Exception as exc:
             logger.exception("Gemini vision JSON parse failed (%s): %s", model_id, text)
             raise VisionAnalysisError() from exc
-
-        if result.health_score <= 0 or result.estimated_acreage <= 0:
-            raise VisionAnalysisError()
-
-        logger.info("Vision analysis succeeded via model=%s health_score=%s", model_id, result.health_score)
-        return result

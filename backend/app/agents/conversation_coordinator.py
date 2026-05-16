@@ -18,10 +18,11 @@ GPT_MODEL = "gpt-4o"
 
 SYSTEM_PROMPT = """You extract structured Sri Lankan smallholder farm loan intake from conversation transcripts.
 Farmers may speak Tamil, Sinhala, English, or a mix — always output English crop names and numeric fields.
-Return crop_type (e.g. Paddy, Maize, Tea, Coconut, Vegetables), declared_acreage as a positive number in acres, and requested_amount in LKR (minimum 5000).
+Return crop_type (e.g. Paddy, Maize, Corn, Tea, Coconut, Vegetables, Fruits), declared_acreage as a positive number in acres, and requested_amount in LKR (minimum 5000).
 Normalize informal speech in any language ("two and a half acres", "75 thousand rupees", Tamil/Sinhala number words) into numeric values.
-Map common Tamil crop terms when heard: நெல்/விதைப்பயிர் → Paddy, மக்காச்சோளம் → Maize, தேயிலை → Tea.
-Map common Sinhala crop terms when heard: වී/කුඹුරු → Paddy, ඉරිඟු/මයිස් → Maize, තේ → Tea, පොල් → Coconut, එළවළු → Vegetables.
+Map common Tamil crop terms when heard: நெல்/விதைப்பயிர் → Paddy, மக்காச்சோளம்/சோளம் → Maize or Corn, தேயிலை → Tea, பழம்/காய்கறி → Fruits or Vegetables.
+Map common Sinhala crop terms when heard: වී/කුඹුරු → Paddy, ඉරිඟු/මයිස්/ඉරිඟු වගා → Maize or Corn, තේ → Tea, පොල් → Coconut, එළවළු → Vegetables, පළතුරු → Fruits.
+Treat "corn" and "maize" as Corn unless the farmer clearly says maize/மக்காச்சோளம்.
 Sinhala number phrases (e.g. අක්කර, රුපියල්, දහයිදාහයි) should become acres and LKR amounts.
 If a field is missing, infer reasonable defaults only when strongly implied; otherwise use sensible demo defaults: acreage 2.5, amount 75000."""
 
@@ -104,9 +105,21 @@ class ConversationCoordinator:
     def _extract_heuristic(transcript: str) -> LoanIntakeFields:
         lower = transcript.lower()
         crop = "Paddy"
-        for candidate in ("paddy", "maize", "tea", "coconut", "vegetables", "rice"):
-            if candidate in lower:
-                crop = candidate.capitalize() if candidate != "rice" else "Paddy"
+        crop_aliases = (
+            ("paddy", "Paddy"),
+            ("rice", "Paddy"),
+            ("maize", "Maize"),
+            ("corn", "Corn"),
+            ("tea", "Tea"),
+            ("coconut", "Coconut"),
+            ("vegetable", "Vegetables"),
+            ("vegetables", "Vegetables"),
+            ("fruit", "Fruits"),
+            ("fruits", "Fruits"),
+        )
+        for needle, label in crop_aliases:
+            if needle in lower:
+                crop = label
                 break
 
         acreage = 2.5

@@ -1,4 +1,5 @@
 import * as Yup from "yup";
+import { SRI_LANKA_DISTRICTS } from "@/constants/districts";
 import type { RegisterCredentials } from "@/types/user";
 
 const sriLankanPhoneRegex = /^\+94[0-9]{9}$/;
@@ -23,6 +24,10 @@ export const registerSchema = Yup.object({
       sriLankanPhoneRegex,
       "Use Sri Lankan format: +94 followed by 9 digits",
     ),
+  district: Yup.string()
+    .trim()
+    .required("District is required")
+    .oneOf([...SRI_LANKA_DISTRICTS], "Select a valid district"),
   address: Yup.string()
     .trim()
     .required("Address is required")
@@ -42,6 +47,7 @@ export const registerInitialValues: RegisterFormValues = {
   lastName: "",
   email: "",
   phone: "",
+  district: SRI_LANKA_DISTRICTS[0],
   address: "",
   password: "",
   confirmPassword: "",

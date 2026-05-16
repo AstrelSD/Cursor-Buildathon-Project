@@ -10,9 +10,16 @@ export type LoanStatus =
 
 export type CropHealthMatrix = {
   chlorophyll_index?: number;
+  vegetation_index?: number;
   anomaly_flag?: boolean;
   classification?: string;
   health_score?: number;
+  image_quality_score?: number;
+  crop_match_confidence?: number;
+  canopy_cover_percent?: number;
+  detected_issues?: string[];
+  growth_stage?: string;
+  acreage_confidence?: number;
 };
 
 export type LoanRow = {

@@ -18,6 +18,7 @@ type SignUpMetadata = {
   firstName: string;
   lastName: string;
   phone: string;
+  district: string;
   address: string;
 };
 
@@ -35,6 +36,7 @@ export const signUpWithEmail = async (
         first_name: metadata.firstName,
         last_name: metadata.lastName,
         phone: metadata.phone,
+        district: metadata.district,
         address: metadata.address,
         full_name: `${metadata.firstName} ${metadata.lastName}`.trim(),
       },

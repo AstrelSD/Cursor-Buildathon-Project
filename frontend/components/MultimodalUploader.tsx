@@ -99,7 +99,7 @@ export function MultimodalUploader({
             <ImagePlus className="h-10 w-10 text-gray-400" />
           )}
           <p className="mt-3 font-medium text-gray-700">
-            {disabled ? "Uploading…" : "Tap here to add photos"}
+            {disabled ? "Uploading…" : "Tap here to add a field photo"}
           </p>
           <p className="mt-1 text-sm text-gray-500">
             JPEG, PNG or WebP · max 10 MB

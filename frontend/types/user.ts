@@ -8,6 +8,7 @@ export type RegisterCredentials = {
   lastName: string;
   email: string;
   phone: string;
+  district: string;
   address: string;
   password: string;
   confirmPassword: string;

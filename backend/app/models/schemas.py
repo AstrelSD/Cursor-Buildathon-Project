@@ -11,6 +11,13 @@ class VisionAnalysisResult(BaseModel):
     chlorophyll_index: float = Field(ge=0, le=1)
     disease_detected: bool
     health_score: float = Field(ge=0, le=100)
+    image_quality_score: float = Field(default=75.0, ge=0, le=100)
+    crop_match_confidence: float = Field(default=0.75, ge=0, le=1)
+    canopy_cover_percent: float = Field(default=50.0, ge=0, le=100)
+    detected_issues: list[str] = Field(default_factory=list)
+    growth_stage: str = Field(default="unknown")
+    acreage_confidence: float = Field(default=0.65, ge=0, le=1)
+    vegetation_index: float = Field(default=0.5, ge=0, le=1)
 
 
 class MarketIntelligenceResult(BaseModel):

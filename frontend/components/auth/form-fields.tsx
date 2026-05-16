@@ -80,6 +80,56 @@ export function FormTextField({
   );
 }
 
+type FormSelectFieldProps = {
+  name: string;
+  id: string;
+  label: string;
+  options: readonly string[];
+  icon: LucideIcon;
+};
+
+export function FormSelectField({
+  name,
+  id,
+  label,
+  options,
+  icon: Icon,
+}: FormSelectFieldProps) {
+  return (
+    <div>
+      <label htmlFor={id} className={formStyles.label}>
+        {label}
+      </label>
+      <Field name={name}>
+        {({ field, meta }: FieldProps<string>) => (
+          <>
+            <div className="relative">
+              <Icon className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
+              <select
+                {...field}
+                id={id}
+                className={fieldClass(
+                  meta.error,
+                  meta.touched,
+                  formStyles.iconLeft,
+                  "appearance-none bg-white",
+                )}
+              >
+                {options.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <FieldError message={meta.touched ? meta.error : undefined} />
+          </>
+        )}
+      </Field>
+    </div>
+  );
+}
+
 type FormTextAreaFieldProps = {
   name: string;
   id: string;

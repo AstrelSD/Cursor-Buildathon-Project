@@ -18,6 +18,7 @@ import {
 
 type Props = {
   disabled?: boolean;
+  profileUserId?: string;
   onIntakeComplete: (payload: VoiceIntakeResult) => void;
   onError?: (message: string) => void;
 };
@@ -85,7 +86,12 @@ function VoiceWave({ active }: { active: boolean }) {
   );
 }
 
-function VoiceConsoleInner({ disabled, onIntakeComplete, onError }: Props) {
+function VoiceConsoleInner({
+  disabled,
+  profileUserId,
+  onIntakeComplete,
+  onError,
+}: Props) {
   const { status } = useConversationStatus();
   const { startSession, endSession } = useConversationControls();
   const [transcriptParts, setTranscriptParts] = useState<string[]>([]);
@@ -179,7 +185,7 @@ function VoiceConsoleInner({ disabled, onIntakeComplete, onError }: Props) {
     setLocalError(null);
     try {
       if (connected) await endSession();
-      const result = await submitVoiceIntake(transcript);
+      const result = await submitVoiceIntake(transcript, profileUserId);
       onIntakeComplete(result);
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Voice intake failed.";
@@ -188,7 +194,14 @@ function VoiceConsoleInner({ disabled, onIntakeComplete, onError }: Props) {
     } finally {
       setProcessing(false);
     }
-  }, [connected, endSession, onError, onIntakeComplete, transcriptParts]);
+  }, [
+    connected,
+    endSession,
+    onError,
+    onIntakeComplete,
+    profileUserId,
+    transcriptParts,
+  ]);
 
   return (
     <div className="flex flex-col items-center gap-4">

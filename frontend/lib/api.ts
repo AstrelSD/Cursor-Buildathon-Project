@@ -28,6 +28,7 @@ export type LoanStatusResponse = {
   multimodal_evidence_url: string | null;
   ai_verified_acreage: number | null;
   crop_health_matrix: Record<string, unknown> | null;
+  ai_verified_acreage: number | null;
 };
 
 async function parseError(response: Response): Promise<string> {

@@ -78,10 +78,6 @@ class Settings(BaseSettings):
         default="gemini-embedding-2",
         description="Gemini embedding model (must match seeded market_intelligence vectors).",
     )
-    DEMO_PROFILE_ID: Optional[str] = Field(
-        default=None,
-        description="UUID of an existing profiles row for anonymous apply flow (hackathon demo).",
-    )
     ELEVENLABS_API_KEY: Optional[SecretStr] = Field(
         default=None,
         description="ElevenLabs API key for voice agent sessions (server-side only).",

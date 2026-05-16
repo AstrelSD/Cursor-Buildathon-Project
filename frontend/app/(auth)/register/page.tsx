@@ -11,6 +11,7 @@ import { useToast } from "@/hooks/useToast";
 import {
   FormAlert,
   FormPasswordField,
+  FormSelectField,
   FormTextAreaField,
   FormTextField,
 } from "@/components/auth/form-fields";
@@ -20,6 +21,7 @@ import type { RegisterCredentials } from "@/types/user";
 import { signUpWithEmail } from "@/utils/authFunctions";
 import { getAuthErrorMessage } from "@/utils/authError";
 import { formStyles } from "@/utils/formFieldClass";
+import { SRI_LANKA_DISTRICTS } from "@/constants/districts";
 import {
   registerInitialValues,
   registerSchema,
@@ -42,6 +44,7 @@ export default function RegisterPage() {
         firstName: values.firstName,
         lastName: values.lastName,
         phone: values.phone,
+        district: values.district,
         address: values.address,
       });
       await refreshSession();
@@ -106,6 +109,14 @@ export default function RegisterPage() {
               placeholder="+94771234567"
               autoComplete="tel"
               icon={Phone}
+            />
+
+            <FormSelectField
+              name="district"
+              id="district"
+              label="Farm district"
+              options={SRI_LANKA_DISTRICTS}
+              icon={MapPin}
             />
 
             <FormTextAreaField

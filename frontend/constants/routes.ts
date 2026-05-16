@@ -14,3 +14,4 @@ export const PATH_POLICY = "/policy";
 export const PATH_FAQ = "/faq";
 export const PATH_CONTACT = "/contact";
 export const PATH_LOANS = "/loans";
+export const PATH_APPLY = "/apply";

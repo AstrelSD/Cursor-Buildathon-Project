@@ -80,13 +80,20 @@ export function logsFromLoanTransition(
       JSON.stringify(previous.crop_health_matrix) !==
         JSON.stringify(current.crop_health_matrix))
   ) {
-    const health = current.crop_health_matrix.health_score;
+    const matrix = current.crop_health_matrix;
+    const health = matrix.health_score;
+    const issues =
+      Array.isArray(matrix.detected_issues) && matrix.detected_issues.length > 0
+        ? ` Issues: ${matrix.detected_issues.join(", ")}.`
+        : "";
     entries.push({
       id: `${loanId}-vision`,
       at: ts(),
-      level: "success",
+      level: matrix.anomaly_flag ? "warn" : "success",
       loanId,
-      message: `[PASSED] Vision agronomist: health ${health ?? "—"}, acreage ${current.ai_verified_acreage ?? "—"}.`,
+      message:
+        `[PASSED] Vision: health ${health ?? "—"}, canopy ${matrix.canopy_cover_percent ?? "—"}%, ` +
+        `acreage ${current.ai_verified_acreage ?? "—"} ac.${issues}`,
     });
   }
 

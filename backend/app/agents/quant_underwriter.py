@@ -13,10 +13,20 @@ from app.models.schemas import (
     UnderwriterDecision,
     VisionAnalysisResult,
 )
+from app.vision.calibration import acreage_variance_penalty
 
 logger = logging.getLogger(__name__)
 
 GPT_MODEL = "gpt-4o"
+
+# Weights tuned for multimodal ag credit (vision + market + declaration alignment).
+_WEIGHT_HEALTH = 0.32
+_WEIGHT_DISEASE = 0.13
+_WEIGHT_MARKET = 0.18
+_WEIGHT_WEATHER = 0.12
+_WEIGHT_ACREAGE = 0.15
+_WEIGHT_IMAGE = 0.05
+_WEIGHT_CROP_MATCH = 0.05
 
 
 class _UnderwriterNarrative(BaseModel):
@@ -36,14 +46,32 @@ class QuantUnderwriterAgent:
         market: MarketIntelligenceResult,
         declared_acreage: float,
     ) -> float:
-        acreage_variance = min(
-            abs(declared_acreage - vision.estimated_acreage) / declared_acreage,
-            1.0,
-        ) * 100
+        health_component = 100.0 - vision.health_score
+
+        disease_component = 0.0
+        if vision.disease_detected:
+            disease_component = min(
+                100.0,
+                55.0 + 12.0 * len(vision.detected_issues),
+            )
+
+        market_component = market.market_volatility_coefficient * 100.0
+        weather_component = min(market.weather_risk_score / 28.0, 1.0) * 100.0
+        acreage_component = acreage_variance_penalty(
+            declared_acreage,
+            vision.estimated_acreage,
+        )
+        image_component = 100.0 - vision.image_quality_score
+        crop_match_component = (1.0 - vision.crop_match_confidence) * 100.0
+
         score = (
-            (0.5 * (100 - vision.health_score))
-            + (0.3 * (market.market_volatility_coefficient * 100))
-            + (0.2 * acreage_variance)
+            _WEIGHT_HEALTH * health_component
+            + _WEIGHT_DISEASE * disease_component
+            + _WEIGHT_MARKET * market_component
+            + _WEIGHT_WEATHER * weather_component
+            + _WEIGHT_ACREAGE * acreage_component
+            + _WEIGHT_IMAGE * image_component
+            + _WEIGHT_CROP_MATCH * crop_match_component
         )
         return round(min(max(score, 0.0), 100.0), 2)
 
@@ -99,16 +127,28 @@ class QuantUnderwriterAgent:
         threshold: float,
         approved: bool,
     ) -> list[str]:
+        issues = ", ".join(vision.detected_issues) if vision.detected_issues else "none"
         base_logs = [
             "[VISION] Crop health matrix synthesized.",
-            f"[MARKET] Volatility coefficient {market.market_volatility_coefficient:.2f}, "
-            f"weather risk {market.weather_risk_score:.1f}.",
-            f"[QUANT] Declared {declared_acreage:.2f} ac vs estimated "
-            f"{vision.estimated_acreage:.2f} ac.",
-            f"[QUANT] Immutable risk score {risk_score:.2f} "
-            f"(threshold {threshold:.2f}).",
-            f"[DECISION] {'APPROVED' if approved else 'REJECTED'} for LKR "
-            f"{requested_amount:,.2f}.",
+            (
+                f"[VISION] health={vision.health_score:.1f}, canopy={vision.canopy_cover_percent:.0f}%, "
+                f"ExG={vision.vegetation_index:.2f}, quality={vision.image_quality_score:.0f}, "
+                f"crop_match={vision.crop_match_confidence:.2f}, stage={vision.growth_stage}."
+            ),
+            f"[VISION] Issues: {issues}; disease_flag={vision.disease_detected}.",
+            (
+                f"[MARKET] Volatility {market.market_volatility_coefficient:.2f}, "
+                f"weather risk {market.weather_risk_score:.1f}."
+            ),
+            (
+                f"[QUANT] Declared {declared_acreage:.2f} ac vs estimated "
+                f"{vision.estimated_acreage:.2f} ac (confidence {vision.acreage_confidence:.2f})."
+            ),
+            (
+                f"[QUANT] Immutable risk score {risk_score:.2f} "
+                f"(threshold {threshold:.2f})."
+            ),
+            f"[DECISION] {'APPROVED' if approved else 'REJECTED'} for LKR {requested_amount:,.2f}.",
         ]
 
         if self._openai is None:
@@ -122,14 +162,19 @@ class QuantUnderwriterAgent:
                         "role": "system",
                         "content": (
                             "You are QuantUnderwriterAgent. Produce 2-4 concise underwriting "
-                            "log lines. Do not change numeric risk values."
+                            "log lines referencing vision pathology, canopy, and market weather. "
+                            "Do not change numeric risk values."
                         ),
                     },
                     {
                         "role": "user",
                         "content": (
                             f"health_score={vision.health_score}, "
+                            f"canopy={vision.canopy_cover_percent}, "
+                            f"issues={issues}, "
+                            f"disease={vision.disease_detected}, "
                             f"market_volatility={market.market_volatility_coefficient}, "
+                            f"weather_risk={market.weather_risk_score}, "
                             f"risk_score={risk_score}, approved={approved}"
                         ),
                     },
