@@ -52,6 +52,32 @@ class Settings(BaseSettings):
         default=None,
         description="Supabase service role key for server-side data mutations.",
     )
+    SUPABASE_STORAGE_BUCKET: str = Field(
+        default="loan-evidence",
+        description="Supabase storage bucket for multimodal crop evidence.",
+    )
+    RISK_REJECTION_THRESHOLD: float = Field(
+        default=45.0,
+        ge=0,
+        le=100,
+        description="Loans with calculated risk above this value are rejected.",
+    )
+    GEMINI_VISION_MODEL: str = Field(
+        default="gemini-2.5-flash",
+        description="Primary Gemini model for multimodal crop vision analysis.",
+    )
+    GEMINI_VISION_FALLBACK_MODELS: str = Field(
+        default="gemini-1.5-flash,gemini-2.0-flash-lite,gemini-1.5-pro",
+        description="Comma-separated fallback vision models if primary hits quota/errors.",
+    )
+    MOCK_VISION_ON_FAILURE: bool = Field(
+        default=False,
+        description="Hackathon/demo: synthesize vision scores when Gemini is unavailable.",
+    )
+    GEMINI_EMBEDDING_MODEL: str = Field(
+        default="gemini-embedding-2",
+        description="Gemini embedding model (must match seeded market_intelligence vectors).",
+    )
 
     @field_validator(
         "OPENAI_API_KEY",

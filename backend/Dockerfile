@@ -22,6 +22,7 @@ RUN groupadd --system agri && useradd --system --gid agri --create-home agri
 
 COPY --from=builder /install /usr/local
 COPY app ./app
+COPY scripts ./scripts
 
 RUN chown -R agri:agri /app
 USER agri
