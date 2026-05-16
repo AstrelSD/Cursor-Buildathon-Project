@@ -104,7 +104,6 @@ export function ApplyPageClient() {
   const [acreage, setAcreage] = useState("2.5");
   const [amount, setAmount] = useState("75000");
   const [file, setFile] = useState<File | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
   const [loanId, setLoanId] = useState<string | null>(null);
@@ -137,15 +136,15 @@ export function ApplyPageClient() {
 
   const decision = decisionLabel(loan?.status as LoanStatus | undefined);
 
+  const previewUrl = useMemo(
+    () => (file ? URL.createObjectURL(file) : null),
+    [file],
+  );
+
   useEffect(() => {
-    if (!file) {
-      setPreviewUrl(null);
-      return;
-    }
-    const url = URL.createObjectURL(file);
-    setPreviewUrl(url);
-    return () => URL.revokeObjectURL(url);
-  }, [file]);
+    if (!previewUrl) return;
+    return () => URL.revokeObjectURL(previewUrl);
+  }, [previewUrl]);
 
   useEffect(() => {
     if (!loanId || phase !== "analyzing") return;

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { NavAuthButton } from "@/components/auth/LogoutButton";
+import { AuthNavActions } from "@/components/auth/AuthNavActions";
 import { AgriLendLogo } from "../AgriLendLogo";
 import { NAV_LINKS } from "@/constants/home";
 
@@ -21,7 +21,7 @@ export function NavBar() {
           ))}
         </nav>
 
-        <NavAuthButton />
+        <AuthNavActions />
       </div>
     </header>
   );

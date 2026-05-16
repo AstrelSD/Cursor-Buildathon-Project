@@ -4,17 +4,12 @@ import {
   ImagePlus,
   Mic,
 } from "lucide-react";
-import { LogoutButton } from "@/components/auth/LogoutButton";
 import CommonButton from "@/components/ui/button";
 import { DASHBOARD_STEPS } from "@/constants/dashboardSteps";
 
 export default function DashboardPage() {
   return (
-    <div className="relative w-full max-w-5xl rounded-2xl border border-gray-100 bg-white shadow-xl">
-        <div className="absolute right-4 top-4 sm:right-6 sm:top-6">
-          <LogoutButton />
-        </div>
-
+    <div className="w-full max-w-5xl rounded-2xl border border-gray-100 bg-white shadow-xl">
         <header className="border-b border-gray-100 px-6 pb-6 pt-8 sm:px-10 sm:pt-10">
           <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">
             Apply for a Farm Loan

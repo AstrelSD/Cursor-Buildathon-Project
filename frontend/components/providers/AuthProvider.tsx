@@ -40,10 +40,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let mounted = true;
 
-    refreshSession().finally(() => {
-      if (mounted) {
-        setIsLoading(false);
-      }
+    void supabase.auth.getSession().then(({ data: { session: nextSession } }) => {
+      if (!mounted) return;
+      setSession(nextSession);
+      setIsLoading(false);
     });
 
     const {
@@ -57,7 +57,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       mounted = false;
       subscription.unsubscribe();
     };
-  }, [supabase, refreshSession]);
+  }, [supabase]);
 
   const user = useMemo(
     () => (session?.user ? mapSupabaseUser(session.user) : null),

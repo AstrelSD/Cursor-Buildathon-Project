@@ -1,4 +1,3 @@
-import { Leaf } from "lucide-react";
 import LandingBanner from "../../components/home/landingBanner";
 import ProcessCard from "../../components/home/processCard";
 import { STEPS } from "../../constants/home";
@@ -6,17 +5,7 @@ import { STEPS } from "../../constants/home";
 export default function HomePage() {
   return (
     <>
-      <div className="relative overflow-hidden">
-        <div
-          className="pointer-events-none absolute -right-24 top-8 h-[420px] w-[420px] opacity-[0.12]"
-          aria-hidden
-        >
-          <Leaf
-            className="h-full w-full text-[#4CAF50]"
-            strokeWidth={0.75}
-            fill="currentColor"
-          />
-        </div>
+      <div className="relative w-full overflow-hidden">
         <LandingBanner />
       </div>
 

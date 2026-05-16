@@ -7,6 +7,7 @@ import { Formik, Form, type FormikHelpers } from "formik";
 import { ArrowRight, Mail, MapPin, Phone, User } from "lucide-react";
 import { AuthFormLayout } from "@/components/auth/AuthFormLayout";
 import { useAuth } from "@/components/providers/AuthProvider";
+import { useToast } from "@/hooks/useToast";
 import {
   FormAlert,
   FormPasswordField,
@@ -27,6 +28,7 @@ import {
 export default function RegisterPage() {
   const router = useRouter();
   const { refreshSession } = useAuth();
+  const { success: toastSuccess } = useToast();
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
@@ -43,6 +45,7 @@ export default function RegisterPage() {
         address: values.address,
       });
       await refreshSession();
+      toastSuccess("Your account has been registered successfully.");
       router.push(PATH_DASHBOARD);
       router.refresh();
     } catch (err: unknown) {

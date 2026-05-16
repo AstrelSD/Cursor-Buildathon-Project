@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { AuthNavActions } from "@/components/auth/AuthNavActions";
 import { useAuth } from "@/components/providers/AuthProvider";
 import CommonButton from "@/components/ui/button";
 import { PATH_LOGIN } from "@/constants/routes";
@@ -41,30 +42,7 @@ export function LogoutButton({ className }: LogoutButtonProps) {
   );
 }
 
+/** @deprecated Use AuthNavActions */
 export function NavAuthButton() {
-  const { isAuthenticated, isLoading } = useAuth();
-
-  if (isLoading) {
-    return (
-      <span
-        className="inline-block h-9 w-20 shrink-0 rounded-lg bg-gray-100"
-        aria-hidden
-      />
-    );
-  }
-
-  if (isAuthenticated) {
-    return (
-      <LogoutButton className="shrink-0 rounded-lg bg-[#2E7D32] px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-[#1b5e20]" />
-    );
-  }
-
-  return (
-    <CommonButton
-      href={PATH_LOGIN}
-      className="shrink-0 rounded-lg bg-[#2E7D32] px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-[#1b5e20]"
-    >
-      Login
-    </CommonButton>
-  );
+  return <AuthNavActions />;
 }
