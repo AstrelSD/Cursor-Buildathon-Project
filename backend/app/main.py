@@ -4,8 +4,6 @@ from typing import AsyncIterator
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from supabase import SupabaseException
-
 from app.config import settings
 from app.database import close_supabase, get_supabase, init_supabase
 from app.routers.loan import router as loan_router
@@ -22,9 +20,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         try:
             await init_supabase()
             app.state.supabase = get_supabase()
-        except SupabaseException as exc:
+        except Exception as exc:
             app.state.supabase_error = str(exc)
-            logger.error("Supabase startup failed: %s", exc)
+            logger.error("Supabase startup failed: %s", exc, exc_info=True)
     yield
     if app.state.supabase is not None:
         await close_supabase()

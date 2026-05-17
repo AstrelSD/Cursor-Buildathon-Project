@@ -1,7 +1,7 @@
 from functools import lru_cache
 from typing import Optional
 
-from pydantic import Field, HttpUrl, SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -44,7 +44,7 @@ class Settings(BaseSettings):
         default=None,
         description="Google GenAI API key for Gemini vision analysis.",
     )
-    SUPABASE_URL: Optional[HttpUrl] = Field(
+    SUPABASE_URL: Optional[str] = Field(
         default=None,
         description="Supabase project URL (https://<project-ref>.supabase.co).",
     )
@@ -96,7 +96,7 @@ class Settings(BaseSettings):
         default=None,
         description="ElevenLabs Agents agent_id for conversational intake on /apply.",
     )
-    FRONTEND_URL: Optional[HttpUrl] = Field(
+    FRONTEND_URL: Optional[str] = Field(
         default=None,
         description="Production frontend origin for CORS (e.g. https://your-app.vercel.app).",
     )
@@ -182,7 +182,8 @@ class Settings(BaseSettings):
 
     @property
     def supabase_configured(self) -> bool:
-        return self.SUPABASE_URL is not None and self.SUPABASE_SERVICE_ROLE_KEY is not None
+        url = (self.SUPABASE_URL or "").strip()
+        return url.startswith("https://") and self.SUPABASE_SERVICE_ROLE_KEY is not None
 
     @property
     def openai_configured(self) -> bool:
@@ -227,8 +228,10 @@ class Settings(BaseSettings):
             "http://localhost:3000",
             "http://127.0.0.1:3000",
         ]
-        if self.FRONTEND_URL is not None:
-            origins.append(str(self.FRONTEND_URL).rstrip("/"))
+        if self.FRONTEND_URL:
+            origin = self.FRONTEND_URL.strip().rstrip("/")
+            if origin.startswith(("http://", "https://")) and origin not in origins:
+                origins.append(origin)
         for raw in self.CORS_ALLOW_ORIGINS.split(","):
             origin = raw.strip().rstrip("/")
             if origin and origin not in origins:
