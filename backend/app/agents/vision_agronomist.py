@@ -19,11 +19,10 @@ from app.vision.image_signals import (
     analyze_image_bytes,
     prepare_image_for_vision,
 )
+from app.vision.field_health import FieldHealthValidationError, validate_vision_metrics
 from app.vision.prompts import build_vision_system_prompt, build_vision_user_prompt
 
 logger = logging.getLogger(__name__)
-
-MIN_IMAGE_QUALITY = 28.0
 
 
 class VisionAnalysisError(Exception):
@@ -279,17 +278,10 @@ class VisionAgronomistAgent:
 
     @staticmethod
     def _validate_for_underwriting(result: VisionAnalysisResult) -> None:
-        if result.health_score <= 0 or result.estimated_acreage <= 0:
-            raise VisionAnalysisError()
-        if result.image_quality_score < MIN_IMAGE_QUALITY:
-            raise VisionAnalysisError(
-                "Evaluation failed: Image too blurry, dark, or low resolution. "
-                "Retake the photo in daylight with the full field visible."
-            )
-        if result.crop_match_confidence < 0.25:
-            raise VisionAnalysisError(
-                "Evaluation failed: Photo does not match the declared crop type."
-            )
+        try:
+            validate_vision_metrics(result)
+        except FieldHealthValidationError as exc:
+            raise VisionAnalysisError(str(exc)) from exc
 
     @staticmethod
     def _parse_response(text: Optional[str], model_id: str) -> VisionAnalysisResult:

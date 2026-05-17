@@ -16,6 +16,7 @@ from app.database import get_supabase
 from app.models.schemas import LoanRecord
 from app.services.seylan_api_service import SeylanApiError
 from app.services.storage import guess_mime_type, resolve_storage_location
+from app.vision.field_health import assess_field_health_from_vision
 
 logger = logging.getLogger(__name__)
 
@@ -144,6 +145,7 @@ async def run_evaluation_pipeline(loan_id: UUID) -> None:
 
     vision_result = vision_out
     market_result = market_out
+    field_health_preview = assess_field_health_from_vision(vision_result)
 
     await _update_loan(
         loan_id,
@@ -161,6 +163,7 @@ async def run_evaluation_pipeline(loan_id: UUID) -> None:
                 "detected_issues": vision_result.detected_issues,
                 "growth_stage": vision_result.growth_stage,
                 "acreage_confidence": vision_result.acreage_confidence,
+                "field_health_band": field_health_preview.band.value,
             },
             "market_volatility_index": market_result.market_volatility_coefficient,
         },

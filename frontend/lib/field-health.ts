@@ -1,4 +1,14 @@
 import type { CropHealthMatrix } from "@/lib/supabase";
+import {
+  HIGH_CROP_MATCH_CONFIDENCE,
+  HIGH_HEALTH_SCORE,
+  HIGH_IMAGE_QUALITY_SCORE,
+  MIN_CROP_MATCH_CONFIDENCE,
+  MIN_HEALTH_SCORE,
+  MIN_IMAGE_QUALITY_SCORE,
+  RISK_SCORE_HIGH_BAND,
+  RISK_SCORE_LOW_BAND,
+} from "@/lib/field-health-thresholds";
 
 export type FieldHealthBand = "high" | "medium" | "low";
 
@@ -44,19 +54,19 @@ export function assessFieldHealth(
   let band: FieldHealthBand = "medium";
 
   const lowSignals =
-    healthScore < 45 ||
+    healthScore < MIN_HEALTH_SCORE ||
     diseaseDetected ||
-    (imageQuality != null && imageQuality < 40) ||
-    (cropMatch != null && cropMatch < 0.4) ||
-    (calculatedRiskScore != null && calculatedRiskScore > 55);
+    (imageQuality != null && imageQuality < MIN_IMAGE_QUALITY_SCORE) ||
+    (cropMatch != null && cropMatch < MIN_CROP_MATCH_CONFIDENCE) ||
+    (calculatedRiskScore != null && calculatedRiskScore > RISK_SCORE_LOW_BAND);
 
   const highSignals =
-    healthScore >= 72 &&
+    healthScore >= HIGH_HEALTH_SCORE &&
     !diseaseDetected &&
     issues.length === 0 &&
-    (imageQuality == null || imageQuality >= 58) &&
-    (cropMatch == null || cropMatch >= 0.65) &&
-    (calculatedRiskScore == null || calculatedRiskScore <= 38);
+    (imageQuality == null || imageQuality >= HIGH_IMAGE_QUALITY_SCORE) &&
+    (cropMatch == null || cropMatch >= HIGH_CROP_MATCH_CONFIDENCE) &&
+    (calculatedRiskScore == null || calculatedRiskScore <= RISK_SCORE_HIGH_BAND);
 
   if (lowSignals) {
     band = "low";
@@ -73,8 +83,8 @@ export function assessFieldHealth(
     band === "high"
       ? "Field imagery shows strong canopy vigor with no major stress signals."
       : band === "medium"
-        ? "Field looks workable; some stress or uncertainty was detected — review details below."
-        : "Field health or photo quality raises concern; underwriting may decline or request a new photo.";
+        ? "Field looks workable; some stress or uncertainty was detected — underwriting will weigh these signals in the risk score."
+        : "Field health or photo quality does not meet underwriting standards. A loan in this band will not be approved until you submit a clearer photo.";
 
   return {
     band,

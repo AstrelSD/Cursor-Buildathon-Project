@@ -15,19 +15,24 @@ from app.models.schemas import (
     VisionAnalysisResult,
 )
 from app.vision.calibration import acreage_variance_penalty
+from app.vision.field_health import (
+    FieldHealthBand,
+    assess_field_health_from_vision,
+    field_health_rejection_reason,
+)
 
 logger = logging.getLogger(__name__)
 
 GPT_MODEL = "gpt-4o"
 
 # Weights tuned for multimodal ag credit (vision + market + declaration alignment).
-_WEIGHT_HEALTH = 0.32
+_WEIGHT_HEALTH = 0.28
 _WEIGHT_DISEASE = 0.13
 _WEIGHT_MARKET = 0.18
 _WEIGHT_WEATHER = 0.12
-_WEIGHT_ACREAGE = 0.15
-_WEIGHT_IMAGE = 0.05
-_WEIGHT_CROP_MATCH = 0.05
+_WEIGHT_ACREAGE = 0.12
+_WEIGHT_IMAGE = 0.10
+_WEIGHT_CROP_MATCH = 0.07
 
 
 class _UnderwriterNarrative(BaseModel):
@@ -87,7 +92,10 @@ class QuantUnderwriterAgent:
     ) -> UnderwriterDecision:
         risk_score = self.calculate_risk_score(vision, market, declared_acreage)
         threshold = settings.RISK_REJECTION_THRESHOLD
-        approved = risk_score <= threshold
+        field_health = assess_field_health_from_vision(vision, risk_score)
+        risk_acceptable = risk_score <= threshold
+        field_health_acceptable = field_health.band != FieldHealthBand.LOW
+        approved = risk_acceptable and field_health_acceptable
 
         logs = await self._build_logs(
             vision=vision,
@@ -97,9 +105,18 @@ class QuantUnderwriterAgent:
             risk_score=risk_score,
             threshold=threshold,
             approved=approved,
+            field_health_band=field_health.band.value,
         )
 
-        if not approved:
+        if not field_health_acceptable:
+            return UnderwriterDecision(
+                calculated_risk_score=risk_score,
+                approved=False,
+                rejection_reason=field_health_rejection_reason(field_health),
+                decision_logs=logs,
+            )
+
+        if not risk_acceptable:
             return UnderwriterDecision(
                 calculated_risk_score=risk_score,
                 approved=False,
@@ -130,10 +147,12 @@ class QuantUnderwriterAgent:
         risk_score: float,
         threshold: float,
         approved: bool,
+        field_health_band: str,
     ) -> list[str]:
         issues = ", ".join(vision.detected_issues) if vision.detected_issues else "none"
         base_logs = [
             "[VISION] Crop health matrix synthesized.",
+            f"[FIELD_HEALTH] Confidence band={field_health_band}.",
             (
                 f"[VISION] health={vision.health_score:.1f}, canopy={vision.canopy_cover_percent:.0f}%, "
                 f"ExG={vision.vegetation_index:.2f}, quality={vision.image_quality_score:.0f}, "
