@@ -1,7 +1,7 @@
 from functools import lru_cache
 from typing import Optional
 
-from pydantic import Field, HttpUrl, SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -44,7 +44,7 @@ class Settings(BaseSettings):
         default=None,
         description="Google GenAI API key for Gemini vision analysis.",
     )
-    SUPABASE_URL: Optional[HttpUrl] = Field(
+    SUPABASE_URL: Optional[str] = Field(
         default=None,
         description="Supabase project URL (https://<project-ref>.supabase.co).",
     )
@@ -80,6 +80,10 @@ class Settings(BaseSettings):
         default=False,
         description="Hackathon/demo: synthesize vision scores when Gemini is unavailable.",
     )
+    GEMINI_INTAKE_MODEL: str = Field(
+        default="gemini-2.5-flash",
+        description="Gemini model for voice transcript → loan field extraction.",
+    )
     GEMINI_EMBEDDING_MODEL: str = Field(
         default="gemini-embedding-2",
         description="Gemini embedding model (must match seeded market_intelligence vectors).",
@@ -91,6 +95,14 @@ class Settings(BaseSettings):
     ELEVENLABS_AGENT_ID: Optional[str] = Field(
         default=None,
         description="ElevenLabs Agents agent_id for conversational intake on /apply.",
+    )
+    FRONTEND_URL: Optional[str] = Field(
+        default=None,
+        description="Production frontend origin for CORS (e.g. https://your-app.vercel.app).",
+    )
+    CORS_ALLOW_ORIGINS: str = Field(
+        default="",
+        description="Extra CORS origins, comma-separated (preview URLs, custom domains).",
     )
 
     # Seylan Bank APIs via hackathon sandbox proxy (see Web API Manual for paths/payloads)
@@ -160,9 +172,9 @@ class Settings(BaseSettings):
     def normalize_optional_secrets(cls, value: object) -> object:
         return _strip_secret(value)
 
-    @field_validator("SUPABASE_URL", mode="before")
+    @field_validator("SUPABASE_URL", "FRONTEND_URL", mode="before")
     @classmethod
-    def normalize_supabase_url(cls, value: object) -> object:
+    def normalize_optional_urls(cls, value: object) -> object:
         value = _empty_to_none(value)
         if isinstance(value, str):
             return value.strip()
@@ -170,7 +182,8 @@ class Settings(BaseSettings):
 
     @property
     def supabase_configured(self) -> bool:
-        return self.SUPABASE_URL is not None and self.SUPABASE_SERVICE_ROLE_KEY is not None
+        url = (self.SUPABASE_URL or "").strip()
+        return url.startswith("https://") and self.SUPABASE_SERVICE_ROLE_KEY is not None
 
     @property
     def openai_configured(self) -> bool:
@@ -208,6 +221,22 @@ class Settings(BaseSettings):
     @property
     def seylan_sandbox_base_url(self) -> str:
         return self.SEYLAN_SANDBOX_BASE_URL.rstrip("/")
+
+    @property
+    def cors_origins(self) -> list[str]:
+        origins = [
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+        ]
+        if self.FRONTEND_URL:
+            origin = self.FRONTEND_URL.strip().rstrip("/")
+            if origin.startswith(("http://", "https://")) and origin not in origins:
+                origins.append(origin)
+        for raw in self.CORS_ALLOW_ORIGINS.split(","):
+            origin = raw.strip().rstrip("/")
+            if origin and origin not in origins:
+                origins.append(origin)
+        return origins
 
     @property
     def seylan_merchant_mid(self) -> str:

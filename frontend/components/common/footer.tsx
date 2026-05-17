@@ -8,7 +8,7 @@ export function Footer() {
         <AgriLendLogo href="/" />
 
         <p className="text-center text-gray-500">
-          © 2024 Agri-Lend. Empowering Agricultural Growth.
+          © 2026 Agri-Lend. Empowering Agricultural Growth.
         </p>
 
         <div className="flex items-center gap-6">

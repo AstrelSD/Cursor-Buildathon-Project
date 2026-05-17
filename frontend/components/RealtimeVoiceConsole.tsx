@@ -10,6 +10,11 @@ import { Loader2, Mic, Square } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
+  accumulateVoicePreview,
+  parseVoiceTranscriptPreview,
+  type VoiceIntakePreview,
+} from "@/lib/voiceIntakePreview";
+import {
   fetchVoiceSignedUrl,
   getPublicAgentId,
   submitVoiceIntake,
@@ -19,7 +24,8 @@ import {
 type Props = {
   disabled?: boolean;
   profileUserId?: string;
-  onIntakeComplete: (payload: VoiceIntakeResult) => void;
+  onFieldsPreview?: (fields: VoiceIntakePreview) => void;
+  onIntakeComplete: (payload: VoiceIntakeResult, transcript: string) => void;
   onError?: (message: string) => void;
 };
 
@@ -89,6 +95,7 @@ function VoiceWave({ active }: { active: boolean }) {
 function VoiceConsoleInner({
   disabled,
   profileUserId,
+  onFieldsPreview,
   onIntakeComplete,
   onError,
 }: Props) {
@@ -97,6 +104,7 @@ function VoiceConsoleInner({
   const [transcriptParts, setTranscriptParts] = useState<string[]>([]);
   const [processing, setProcessing] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
+  const previewAccumulatorRef = useRef<VoiceIntakePreview>({});
 
   useConversation({
     onMessage: (message) => {
@@ -107,13 +115,8 @@ function VoiceConsoleInner({
             ? message
             : "";
       if (!text.trim()) return;
-      const source =
-        typeof message === "object" && message !== null && "source" in message
-          ? String((message as { source?: string }).source ?? "")
-          : "";
-      if (source === "user" || source === "microphone") {
-        setTranscriptParts((prev) => [...prev, text.trim()]);
-      }
+      // User + agent text (agent often recaps crop/acreage/amount in English).
+      setTranscriptParts((prev) => [...prev, text.trim()]);
     },
     onError: (error: unknown) => {
       const msg =
@@ -132,10 +135,30 @@ function VoiceConsoleInner({
   const connected = status === "connected";
   const connecting = status === "connecting";
 
+  const fullTranscript = transcriptParts.join("\n").trim();
+
+  useEffect(() => {
+    if (!onFieldsPreview || fullTranscript.length < 3) return;
+    const parsed = parseVoiceTranscriptPreview(fullTranscript);
+    previewAccumulatorRef.current = accumulateVoicePreview(
+      previewAccumulatorRef.current,
+      parsed,
+    );
+    const merged = previewAccumulatorRef.current;
+    if (
+      merged.crop_type != null ||
+      merged.declared_acreage != null ||
+      merged.requested_amount != null
+    ) {
+      onFieldsPreview(merged);
+    }
+  }, [fullTranscript, onFieldsPreview]);
+
   const startVoice = useCallback(async () => {
     if (disabled || connecting || connected) return;
     setLocalError(null);
     setTranscriptParts([]);
+    previewAccumulatorRef.current = {};
 
     try {
       await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -170,8 +193,7 @@ function VoiceConsoleInner({
   }, [connected, endSession]);
 
   const applyVoiceIntake = useCallback(async () => {
-    const transcript = transcriptParts.join("\n").trim();
-    if (transcript.length < 8) {
+    if (fullTranscript.length < 8) {
       const msg = "Speak about your crop, acreage, and loan amount first.";
       setLocalError(msg);
       onError?.(msg);
@@ -182,8 +204,8 @@ function VoiceConsoleInner({
     setLocalError(null);
     try {
       if (connected) await endSession();
-      const result = await submitVoiceIntake(transcript, profileUserId);
-      onIntakeComplete(result);
+      const result = await submitVoiceIntake(fullTranscript, profileUserId);
+      onIntakeComplete(result, fullTranscript);
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Voice intake failed.";
       setLocalError(msg);
@@ -197,7 +219,7 @@ function VoiceConsoleInner({
     onError,
     onIntakeComplete,
     profileUserId,
-    transcriptParts,
+    fullTranscript,
   ]);
 
   return (

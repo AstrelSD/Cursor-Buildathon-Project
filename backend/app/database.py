@@ -9,8 +9,16 @@ from supabase import AsyncClient, acreate_client
 from app.config import settings
 
 _client: Optional[AsyncClient] = None
-_async_init_lock = asyncio.Lock()
+_async_init_lock: Optional[asyncio.Lock] = None
 _thread_guard = Lock()
+
+
+def _get_async_init_lock() -> asyncio.Lock:
+    """Create the lock lazily (safe for serverless cold starts without a running loop)."""
+    global _async_init_lock
+    if _async_init_lock is None:
+        _async_init_lock = asyncio.Lock()
+    return _async_init_lock
 
 
 async def init_supabase() -> AsyncClient:
@@ -23,12 +31,12 @@ async def init_supabase() -> AsyncClient:
             "SUPABASE_SERVICE_ROLE_KEY in backend/.env"
         )
 
-    async with _async_init_lock:
+    async with _get_async_init_lock():
         if _client is not None:
             return _client
 
         client = await acreate_client(
-            str(settings.SUPABASE_URL),
+            settings.SUPABASE_URL.strip(),  # type: ignore[union-attr]
             settings.SUPABASE_SERVICE_ROLE_KEY.get_secret_value(),  # type: ignore[union-attr]
         )
 
@@ -42,7 +50,7 @@ async def close_supabase() -> None:
     """Tear down the Supabase client and release underlying HTTP resources."""
     global _client
 
-    async with _async_init_lock:
+    async with _get_async_init_lock():
         with _thread_guard:
             client = _client
             _client = None

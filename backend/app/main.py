@@ -4,8 +4,6 @@ from typing import AsyncIterator
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from supabase import SupabaseException
-
 from app.config import settings
 from app.database import close_supabase, get_supabase, init_supabase
 from app.routers.loan import router as loan_router
@@ -13,12 +11,6 @@ from app.routers.profile import router as profile_router
 from app.routers.voice import router as voice_router
 
 logger = logging.getLogger(__name__)
-
-CORS_ORIGINS = [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-]
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -28,9 +20,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         try:
             await init_supabase()
             app.state.supabase = get_supabase()
-        except SupabaseException as exc:
+        except Exception as exc:
             app.state.supabase_error = str(exc)
-            logger.error("Supabase startup failed: %s", exc)
+            logger.error("Supabase startup failed: %s", exc, exc_info=True)
     yield
     if app.state.supabase is not None:
         await close_supabase()
@@ -45,7 +37,8 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=CORS_ORIGINS,
+    allow_origins=settings.cors_origins,
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

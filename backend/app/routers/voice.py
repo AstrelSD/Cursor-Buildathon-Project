@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 
 from app.agents.conversation_coordinator import ConversationCoordinator
 from app.config import settings
+from app.constants.crops import normalize_crop_type
 from app.services.loan_intake import create_draft_loan
 
 logger = logging.getLogger(__name__)
@@ -119,9 +120,11 @@ async def voice_intake(body: VoiceIntakeRequest) -> VoiceIntakeResponse:
             detail="Failed to extract loan details from transcript.",
         ) from exc
 
+    crop_type = normalize_crop_type(fields.crop_type)
+
     try:
         created = await create_draft_loan(
-            crop_type=fields.crop_type,
+            crop_type=crop_type,
             declared_acreage=fields.declared_acreage,
             requested_amount=fields.requested_amount,
             user_id=body.user_id,
@@ -144,7 +147,7 @@ async def voice_intake(body: VoiceIntakeRequest) -> VoiceIntakeResponse:
     return VoiceIntakeResponse(
         status="created",
         loan_id=created["loan_id"],
-        crop_type=fields.crop_type,
+        crop_type=crop_type,
         declared_acreage=fields.declared_acreage,
         requested_amount=fields.requested_amount,
     )

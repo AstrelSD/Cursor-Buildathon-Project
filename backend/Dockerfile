@@ -14,7 +14,10 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
-RUN pip install --default-timeout=1000 --no-cache-dir --prefix=/install -r requirements.txt
+# Upgrade pip first; --retries helps when large wheels (pyroaring, Pillow) download over slow links.
+# If you see "THESE PACKAGES DO NOT MATCH THE HASHES", rebuild with: docker compose build api --no-cache
+RUN pip install --upgrade pip setuptools wheel \
+    && pip install --default-timeout=1000 --retries 10 --no-cache-dir --prefix=/install -r requirements.txt
 
 FROM base AS runtime
 

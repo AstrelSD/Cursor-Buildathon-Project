@@ -13,6 +13,10 @@ import { MultimodalUploader } from "@/components/MultimodalUploader";
 import { RealtimeVoiceConsole } from "@/components/RealtimeVoiceConsole";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { PATH_LOGIN, PATH_REGISTER } from "@/constants/routes";
+import {
+  mergeVoiceIntakeFields,
+  type VoiceIntakePreview,
+} from "@/lib/voiceIntakePreview";
 import type { VoiceIntakeResult } from "@/lib/voice";
 import {
   createLoan,
@@ -133,14 +137,32 @@ export function ApplyPageClient() {
     [intakeComplete, formComplete, phase, loan],
   );
 
-  const handleVoiceIntake = useCallback((payload: VoiceIntakeResult) => {
-    setCropType(payload.crop_type);
-    setAcreage(String(payload.declared_acreage));
-    setAmount(String(payload.requested_amount));
-    setLoanId(payload.loan_id);
-    setVoiceIntakeDone(true);
-    setSubmitError(null);
+  const applyVoiceFields = useCallback((fields: VoiceIntakePreview) => {
+    if (fields.crop_type != null) setCropType(fields.crop_type);
+    if (fields.declared_acreage != null) {
+      setAcreage(String(fields.declared_acreage));
+    }
+    if (fields.requested_amount != null) {
+      setAmount(String(Math.round(fields.requested_amount)));
+    }
   }, []);
+
+  const handleVoiceFieldsPreview = useCallback(
+    (fields: VoiceIntakePreview) => {
+      applyVoiceFields(fields);
+    },
+    [applyVoiceFields],
+  );
+
+  const handleVoiceIntake = useCallback(
+    (payload: VoiceIntakeResult, transcript: string) => {
+      applyVoiceFields(mergeVoiceIntakeFields(payload, transcript));
+      setLoanId(payload.loan_id);
+      setVoiceIntakeDone(true);
+      setSubmitError(null);
+    },
+    [applyVoiceFields],
+  );
 
   const decision = decisionLabel(loan?.status as LoanStatus | undefined);
 
@@ -315,6 +337,7 @@ export function ApplyPageClient() {
                 <RealtimeVoiceConsole
                   disabled={isBusy}
                   profileUserId={profileUserId}
+                  onFieldsPreview={handleVoiceFieldsPreview}
                   onIntakeComplete={handleVoiceIntake}
                   onError={setSubmitError}
                 />
@@ -327,6 +350,7 @@ export function ApplyPageClient() {
                   </label>
                   <select
                     id="crop"
+                    key={cropType}
                     value={cropType}
                     disabled={isBusy}
                     onChange={(e) => setCropType(e.target.value)}
