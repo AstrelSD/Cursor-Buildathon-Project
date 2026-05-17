@@ -11,6 +11,7 @@ from openai import AsyncOpenAI
 from pydantic import BaseModel, Field
 
 from app.config import settings
+from app.constants.crops import normalize_crop_type
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +25,8 @@ Map common Tamil crop terms when heard: நெல்/விதைப்பயி
 Map common Sinhala crop terms when heard: වී/කුඹුරු → Paddy, ඉරිඟු/මයිස්/ඉරිඟු වගා → Maize or Corn, තේ → Tea, පොල් → Coconut, එළවළු → Vegetables, පළතුරු → Fruits.
 Treat "corn" and "maize" as Corn unless the farmer clearly says maize/மக்காச்சோளம்.
 Sinhala number phrases (e.g. අක්කර, රුපියල්, දහයිදාහයි) should become acres and LKR amounts.
-If a field is missing, infer reasonable defaults only when strongly implied; otherwise use sensible demo defaults: acreage 2.5, amount 75000."""
+If crop_type cannot be determined from the transcript, use "Paddy" only when rice/paddy/நெல்/වී is mentioned; otherwise pick the closest supported crop from context. Never ignore an explicit crop name in Tamil, Sinhala, or English.
+If acreage or amount is missing, use defaults only when strongly implied: acreage 2.5, amount 75000."""
 
 
 class LoanIntakeFields(BaseModel):
@@ -80,7 +82,9 @@ class ConversationCoordinator:
         parsed = completion.choices[0].message.parsed
         if parsed is None:
             raise ValueError("OpenAI returned no structured intake.")
-        return parsed
+        return parsed.model_copy(
+            update={"crop_type": normalize_crop_type(parsed.crop_type)},
+        )
 
     async def _extract_gemini(self, transcript: str) -> LoanIntakeFields:
         assert self._gemini is not None
@@ -91,7 +95,7 @@ class ConversationCoordinator:
             f"Transcript:\n{transcript}"
         )
         response = await self._gemini.aio.models.generate_content(
-            model="gemini-2.0-flash",
+            model=settings.GEMINI_INTAKE_MODEL,
             contents=prompt,
             config=genai_types.GenerateContentConfig(
                 response_mime_type="application/json",
@@ -99,7 +103,71 @@ class ConversationCoordinator:
         )
         raw = (response.text or "").strip()
         data = json.loads(raw)
-        return LoanIntakeFields.model_validate(data)
+        fields = LoanIntakeFields.model_validate(data)
+        return fields.model_copy(
+            update={"crop_type": normalize_crop_type(fields.crop_type)},
+        )
+
+    @staticmethod
+    def _parse_acreage(lower: str) -> Optional[float]:
+        acre_patterns = (
+            r"(\d+(?:\.\d+)?)\s*(?:acres?|acreage|\bac\b)",
+            r"(?:acre|acres|acreage)\s*(?:of\s*)?(\d+(?:\.\d+)?)",
+        )
+        for pattern in acre_patterns:
+            match = re.search(pattern, lower)
+            if match:
+                return float(match.group(1))
+        return None
+
+    @staticmethod
+    def _parse_amount(lower: str, acreage: Optional[float]) -> Optional[float]:
+        amount_patterns = (
+            r"(?:lkr|rs\.?|rupees?|rupee|loan|amount|need|want|borrow)\s*(?:of\s*)?(\d[\d,]*(?:\.\d+)?)\s*(?:k|thousand)?",
+            r"(\d[\d,]*(?:\.\d+)?)\s*(?:k|thousand)\s*(?:lkr|rs\.?|rupees?)?",
+            r"(\d[\d,]*(?:\.\d+)?)\s*(?:lkr|rs\.?|rupees?)",
+        )
+        for pattern in amount_patterns:
+            match = re.search(pattern, lower)
+            if not match:
+                continue
+            val = ConversationCoordinator._money_token(
+                match.group(1),
+                match.group(0),
+            )
+            if val is not None and val >= 5000:
+                return val
+
+        candidates: list[float] = []
+        for match in re.finditer(r"(\d[\d,]*(?:\.\d+)?)\s*(k|thousand)?", lower):
+            tail = lower[match.end() : match.end() + 12]
+            if re.match(r"\s*(?:acre|acres|acreage|\bac\b)", tail):
+                continue
+            val = ConversationCoordinator._money_token(
+                match.group(1),
+                match.group(0),
+            )
+            if val is not None and val >= 5000:
+                candidates.append(val)
+
+        if not candidates:
+            return None
+        best = max(candidates)
+        if acreage is not None and best == acreage:
+            alt = [n for n in candidates if n != acreage]
+            return max(alt) if alt else None
+        return best
+
+    @staticmethod
+    def _money_token(raw: str, context: str) -> Optional[float]:
+        try:
+            val = float(raw.replace(",", ""))
+        except ValueError:
+            return None
+        ctx = context.lower()
+        if "k" in ctx or "thousand" in ctx:
+            val *= 1000
+        return val
 
     @staticmethod
     def _extract_heuristic(transcript: str) -> LoanIntakeFields:
@@ -122,28 +190,14 @@ class ConversationCoordinator:
                 crop = label
                 break
 
-        acreage = 2.5
-        acre_match = re.search(
-            r"(\d+(?:\.\d+)?)\s*(?:acre|acres|acreage)",
-            lower,
-        )
-        if acre_match:
-            acreage = float(acre_match.group(1))
+        parsed_acreage = ConversationCoordinator._parse_acreage(lower)
+        acreage = parsed_acreage if parsed_acreage is not None else 2.5
 
-        amount = 75_000.0
-        amount_match = re.search(
-            r"(?:lkr|rs\.?|rupees?|amount|loan)?\s*(\d[\d,]*(?:\.\d+)?)\s*(?:k|thousand)?",
-            lower,
-        )
-        if amount_match:
-            raw = amount_match.group(1).replace(",", "")
-            val = float(raw)
-            if "thousand" in lower or "k" in lower[max(0, amount_match.start() - 5) : amount_match.end() + 5]:
-                val *= 1000
-            amount = max(val, 5000)
+        parsed_amount = ConversationCoordinator._parse_amount(lower, parsed_acreage)
+        amount = parsed_amount if parsed_amount is not None else 75_000.0
 
         return LoanIntakeFields(
-            crop_type=crop,
+            crop_type=normalize_crop_type(crop),
             declared_acreage=acreage,
             requested_amount=amount,
         )

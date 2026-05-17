@@ -80,6 +80,10 @@ class Settings(BaseSettings):
         default=False,
         description="Hackathon/demo: synthesize vision scores when Gemini is unavailable.",
     )
+    GEMINI_INTAKE_MODEL: str = Field(
+        default="gemini-2.5-flash",
+        description="Gemini model for voice transcript → loan field extraction.",
+    )
     GEMINI_EMBEDDING_MODEL: str = Field(
         default="gemini-embedding-2",
         description="Gemini embedding model (must match seeded market_intelligence vectors).",

@@ -9,7 +9,7 @@ export default function DashboardLayout({
   return (
     <div className="flex min-h-dvh flex-col">
       <NavBar />
-      <main className="flex flex-1 flex-col bg-[#faf9f6] px-4 py-10 sm:px-6">
+      <main className="flex flex-1 flex-col bg-[#f8faf8] px-4 py-6 sm:px-6 sm:py-10">
         {children}
       </main>
       <Footer />
